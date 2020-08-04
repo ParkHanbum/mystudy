@@ -7,8 +7,8 @@ endif
 SRC_DIR ?= $(PWD)
 LDFLAGS += $(shell $(LLVM_CONFIG) --ldflags)
 COMMON_FLAGS :=
-CXXFLAGS += $(COMMON_FLAGS) $(shell $(LLVM_CONFIG) --cxxflags) -fno-rtti
-CPPFLAGS += $(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR) -fPIC
+CXXFLAGS += -g $(COMMON_FLAGS) $(shell $(LLVM_CONFIG) --cxxflags) -fno-rtti
+CPPFLAGS += -g $(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR) -fPIC
 
 ifeq ($(shell uname),Darwin)
 LOADABLE_MODULE_OPTIONS=-bundle -undefined dynamic_lookup
@@ -51,7 +51,7 @@ $(CALL-PASS-SO) : $(CALL-PASS-OBJS)
 run: $(BITCODE) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO)
 	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(BITCODE) -o result.bc 
 	llvm-dis result.bc 
-	opt -load $(SRC_DIR)/$(CALL-PASS-SO) -legacy-static-cc -analyze $(CALL-PASS-BC)
+	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
 
 clean::
 	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO) $(BITCODE) result.ll
