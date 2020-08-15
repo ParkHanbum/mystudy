@@ -16,9 +16,13 @@ int main() {
   bar();
   fez();
 
-  int ii = 0;
-  for (ii = 0; ii < 10; ii++)
-    foo();
+  void (*t)();
+  t = foo;
+  t(1);
+  t = bar;
+  t();
+  t = fez;
+  t();
 
   return 0;
 }

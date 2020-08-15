@@ -49,10 +49,12 @@ $(CALL-PASS-SO) : $(CALL-PASS-OBJS)
 	$(CXX) -o $@ $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^
 
 run: $(BITCODE) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO)
-	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(BITCODE) -o result.bc 
-	llvm-dis result.bc 
+	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(BITCODE) -o $(BITCODE).bin 
+	llvm-dis $(BITCODE).bin
 	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
+	llvm-dis $(CALL-PASS-BC).bin
 
 clean::
-	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO) $(BITCODE) result.ll
+	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO)
 	$(QUIET)rm -f $(CALL-PASS-OBJS) $(CALL-PASS-SO) $(CALL-PASS-BC)
+	$(QUIET)rm -f *.ll *.bc *.bin

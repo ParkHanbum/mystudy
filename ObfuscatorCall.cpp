@@ -76,6 +76,49 @@ Constant *CreateGlobalCounter(Module &M, StringRef GlobalVarName) {
   return NewGlobalVar;
 }
 
+void DynamicCallCounter::printOperands(llvm::Instruction& inst)
+{
+  for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
+    Value *el = start->get();	
+    errs() << "\n\t opcode : " << el->getName() << "\t type : "; 
+    el->getType()->print(errs(), false);
+  }
+}
+
+/*
+store void (...)* bitcast (void ()* @fez to void (...)*), void (...)** %2, align 8
+%6 = load void (...)*, void (...)** %2, align 8
+call void (...) %6()
+*/
+void DynamicCallCounter::handleCallInst(llvm::Instruction& inst)
+{
+  errs() << "\n=================================================================\n";
+  errs() << "Instruction : " <<  inst.getOpcodeName() << " \t print: ";
+  inst.print(errs(), false);
+  printOperands(inst);
+}
+
+bool DynamicCallCounter::handleInst(llvm::Instruction& inst)
+{
+//  errs() << "\n=================================================================\n";
+//  errs() << "Instruction : " <<  inst.getOpcodeName() << " \t print: ";
+//  inst.print(errs(), false);
+  for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
+    Value *el = start->get();	
+//    errs() << "\n\t opcode : " << el->getName() << "\t type : "; 
+//    el->getType()->print(errs(), false);
+
+//    errs() << "\n";
+  }
+
+  if(isa<CallInst>(inst) || isa<InvokeInst>(inst)) {
+    handleCallInst(inst);
+    return true;
+  }
+
+  return false;
+}
+
 //-----------------------------------------------------------------------------
 // DynamicCallCounter implementation
 //-----------------------------------------------------------------------------
@@ -90,26 +133,19 @@ bool DynamicCallCounter::runOnModule(Module &M) {
   auto &CTX = M.getContext();
 
   for (auto &Func : M) {
-    std::string test = Func.getName();
-    test += "A";
-    Func.setName(test);
-    /*
     for (auto &BB : Func) 
     {
       for (auto &Ins : BB) {
-        auto ICS = ImmutableCallSite(&Ins);
-        if (nullptr == ICS.getInstruction()) {
-          continue;
-        }
-        // Check whether the called function is directly invoked
-        auto DirectInvoc =
-          dyn_cast<Function>(ICS.getCalledValue()->stripPointerCasts());
-        if (nullptr == DirectInvoc) {
-          continue;
+        if (handleInst(Ins)) {
+          IRBuilder<> builder(&Ins);
+          Value* store = builder.CreateAlloca(Type::getInt32PtrTy(CTX), nullptr, "A");
+          auto Val39  = ConstantInt::get(Ins.getType(), 39);
+          Value* var = builder.CreateAdd(builder.getInt32PtrTy(1), builder.getInt32PtrTy(2));
+          builder.CreateGlobalStringPtr(Func.getName());
+          builder.CreateStore(var, store);
         }
       }
     }
-    */
   }
 
   return true;

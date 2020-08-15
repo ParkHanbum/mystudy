@@ -18,6 +18,9 @@
 // New PM interface
 //------------------------------------------------------------------------------
 struct DynamicCallCounter : public llvm::PassInfoMixin<DynamicCallCounter> {
+  bool handleInst(llvm::Instruction& inst);
+  void printOperands(llvm::Instruction& inst);
+  void handleCallInst(llvm::Instruction& inst);
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &);
   bool runOnModule(llvm::Module &M);
