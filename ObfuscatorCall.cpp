@@ -119,6 +119,58 @@ bool DynamicCallCounter::handleInst(llvm::Instruction& inst)
   return false;
 }
 
+/*
+Constant *CreateGlobalFunction(Module &M, Function &func) {
+  auto &CTX = M.getContext();
+  Type* type = func.getReturnType();
+
+  std::string name;
+  name.append("TTTT");
+  name.append(func.getName());
+  // This will insert a declaration into M
+  Constant *NewGlobalVar =
+      M.getOrInsertGlobal(name, type);
+
+  // This will change the declaration into definition (and initialise to 0)
+  GlobalVariable *NewGV = M.getNamedGlobal(name);
+  errs() << NewGV << '\n';
+  NewGV->print(errs(),false);
+  NewGV->setLinkage(GlobalValue::CommonLinkage);
+  NewGV->setAlignment(8);
+  // NewGV->setInitializer();
+
+  type->print(errs(), false);
+  errs() << '\n' << func.getName() << '\n';
+  NewGlobalVar->print(errs(), false);
+  errs() << '\n';
+  return NewGlobalVar;
+}*/
+
+Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
+  std::string name;
+  name.append("TTTT"); name.append(func.getName());
+
+  func.getType()->print(errs(), false);
+  GlobalVariable* fnPtr = new GlobalVariable(/*Module=*/M, 
+      /*Type=*/ func.getType(),
+      /*isConstant=*/ false,
+      /*Linkage=*/ GlobalValue::ExternalLinkage,
+      /*Initializer=*/ &func, // has initializer, specified below
+      /*Name=*/StringRef(name));
+  fnPtr->setAlignment((8));
+
+//  GlobalVariable* con = dyn_cast<GlobalVariable *>(func);
+  // Constant Definitions
+  //ConstantPointerNull* const_ptr_2 = ConstantPointerNull::get(func.getType());
+
+  // Global Variable Definitions
+  //fnPtr->setInitializer(const_ptr_2);
+
+  return fnPtr;
+
+}
+
+
 //-----------------------------------------------------------------------------
 // DynamicCallCounter implementation
 //-----------------------------------------------------------------------------
@@ -133,20 +185,30 @@ bool DynamicCallCounter::runOnModule(Module &M) {
   auto &CTX = M.getContext();
 
   for (auto &Func : M) {
-    for (auto &BB : Func) 
-    {
+    if (Func.isDeclaration())
+      continue;
+
+    // IRBuilder<> builder(&*Func.getEntryBlock().getFirstInsertionPt());
+    Constant *var = CreateGlobalFunctionPtr(M, Func);
+    //LoadInst *load = builder.CreateLoad(var);
+  }
+
+  /*
+  for (auto &Func : M) {
+    for (auto &BB : Func) {
       for (auto &Ins : BB) {
         if (handleInst(Ins)) {
           IRBuilder<> builder(&Ins);
-          Value* store = builder.CreateAlloca(Type::getInt32PtrTy(CTX), nullptr, "A");
+          Value* store = builder.CreateAlloca(Type::getInt32Ty(CTX), nullptr, "A");
           auto Val39  = ConstantInt::get(Ins.getType(), 39);
-          Value* var = builder.CreateAdd(builder.getInt32PtrTy(1), builder.getInt32PtrTy(2));
+          Value* var = builder.CreateAdd(builder.getInt32(1), builder.getInt32(2));
           builder.CreateGlobalStringPtr(Func.getName());
           builder.CreateStore(var, store);
         }
       }
     }
   }
+  */
 
   return true;
 }
