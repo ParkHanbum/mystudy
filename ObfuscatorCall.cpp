@@ -190,25 +190,38 @@ bool DynamicCallCounter::runOnModule(Module &M) {
 
     // IRBuilder<> builder(&*Func.getEntryBlock().getFirstInsertionPt());
     Constant *var = CreateGlobalFunctionPtr(M, Func);
+    FuncNameMap[Func.getName()] = var;
     //LoadInst *load = builder.CreateLoad(var);
   }
 
-  /*
   for (auto &Func : M) {
     for (auto &BB : Func) {
       for (auto &Ins : BB) {
         if (handleInst(Ins)) {
+          errs() << "\n=====================================\n";
           IRBuilder<> builder(&Ins);
-          Value* store = builder.CreateAlloca(Type::getInt32Ty(CTX), nullptr, "A");
-          auto Val39  = ConstantInt::get(Ins.getType(), 39);
-          Value* var = builder.CreateAdd(builder.getInt32(1), builder.getInt32(2));
-          builder.CreateGlobalStringPtr(Func.getName());
-          builder.CreateStore(var, store);
+          CallInst *cinst = dyn_cast<CallInst>(&Ins);
+          cinst->print(errs(), false);
+          errs() << "\n=====================================\n";
+
+          Function *fn = cinst->getCalledFunction();
+          if (fn) {
+            Constant *gFnAddr = FuncNameMap[fn->getName()];
+            gFnAddr->print(errs(), false); gFnAddr->getType()->print(errs(), false);
+            errs() << "\n=====================================\n";
+
+            Value* store = builder.CreateAlloca(gFnAddr->getType(), nullptr, "A");
+            LoadInst *load = builder.CreateLoad(gFnAddr);
+            builder.CreateCall(load);
+
+            //builder.CreateStore(gFnAddr, store);
+            //builder.CreateCall(gFnAddr);
+
+          }
         }
       }
     }
   }
-  */
 
   return true;
 }
