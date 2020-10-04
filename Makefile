@@ -51,7 +51,7 @@ $(CALL-PASS-SO) : $(CALL-PASS-OBJS)
 run: $(BITCODE) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO)
 	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(BITCODE) -o $(BITCODE).bin 
 	llvm-dis $(BITCODE).bin
-	opt-10 -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
+	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
 	llvm-dis $(CALL-PASS-BC).bin
 
 clean::

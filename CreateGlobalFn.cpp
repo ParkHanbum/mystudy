@@ -72,46 +72,12 @@ Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
 
   func.getType()->print(errs(), false);
   GlobalVariable* fnPtr = new GlobalVariable(/*Module=*/M, 
-      /*Type=*/ Type::getInt64Ty(func.getContext()),
-      /*isConstant=*/ true,
+      /*Type=*/ func.getType(),
+      /*isConstant=*/ false,
       /*Linkage=*/ GlobalValue::ExternalLinkage,
-      /*Initializer=*/ nullptr, // has initializer, specified below
+      /*Initializer=*/ &func, // has initializer, specified below
       /*Name=*/StringRef(name));
-
-  IntegerType *I64 = Type::getInt64Ty(func.getContext());
-  /*
-  Value *fncast = new PtrToIntInst(&func, I64, "fncast", &*func.getEntryBlock().getFirstInsertionPt());
-  errs() << "\n======================\n";
-  fncast->print(errs(), false);
-  fncast->getType()->print(errs(), false);
-  errs() << "\n======================\n";
-  Constant *cont = M.getOrInsertGlobal("TEST", fncast->getType());
-  cont = dyn_cast<Constant>(fncast);
-  */
-
-//  @test2 = dso_local global i64 ptrtoint (i8* getelementptr (i8, i8* bitcast (i32 ()* @foo to i8*), i64 1) to i64), align 8i
-  errs() << "\n======================\n";
-  // i8* bitcast (void ()* @fez to i8*)
-  Constant *const_ptr_5 = ConstantExpr::getBitCast(&func, Type::getInt8PtrTy(func.getContext()));
-// Constant *const_ptr_5 = ConstantExpr::getCast(Instruction::BitCast, &func, Type::getInt8PtrTy(func.getContext()));
-  const_ptr_5->print(errs(), false);
-  errs() << "\n======================\n";
-
-  // (i8* getelementptr (i8, i8* bitcast (i32 ()* @foo to i8*), i64 1) 
-  Constant *One = ConstantInt::get(I64, 1);
-  Constant *const_ptr_6 = ConstantExpr::getGetElementPtr(Type::getInt8Ty(func.getContext()), const_ptr_5, One);
-  // Constant *const_ptr_6 = ConstantExpr::getCast(Instruction::GetElementPtr, const_ptr_5, Type::getInt8PtrTy(func.getContext()));
-  const_ptr_6->print(errs(), false);
-
-  // constant i64 ptrtoint (void ()* @fez to i64)
-  Constant *const_ptr_7 = ConstantExpr::getPtrToInt(const_ptr_6, I64);
-  const_ptr_7->print(errs(), false);
-
-  errs() << "\n======================\n";
-
-
-  fnPtr->setInitializer(const_ptr_7);
-//  fnPtr->setInitializer(dyn_cast<Constant>(fncast));
+  fnPtr->setAlignment((8));
 
   return fnPtr;
 
@@ -154,50 +120,16 @@ bool DynamicCallCounter::runOnModule(Module &M) {
           Function *fn = cinst->getCalledFunction();
           if (fn) {
             Constant *gFnAddr = FuncNameMap[fn->getName()];
-            gFnAddr->print(errs(), false);
-	    errs() << "\n";
-	    gFnAddr->getType()->print(errs(), false);
+            gFnAddr->print(errs(), false); gFnAddr->getType()->print(errs(), false);
             errs() << "\n=====================================\n";
-            /*
-            LoadInst *load = builder.CreateLoad(gFnAddr, true);
+
+            // Value* store = builder.CreateAlloca(gFnAddr->getType(), nullptr, "A");
+            LoadInst *load = builder.CreateLoad(gFnAddr);
             builder.CreateCall(load);
-            */
 
-	    /*
-	    %0 = load i64, i64* @test2, align 8
-	    %sub = sub nsw i64 %0, 1
-	    %1 = inttoptr i64 %sub to i32 (...)*
-	    %call = call i32 (...) %1()
-	    */
-	    LoadInst *load = builder.CreateLoad(gFnAddr);
-	    Value *tofn = new IntToPtrInst(load, fn->getType(), "tofncast", &Ins);
-            builder.CreateCall(tofn);
 
-            // NEW
-	    /*
-            PointerType *pt = Type::getInt32PtrTy(Func.getContext());
-            IntegerType *I64 = Type::getInt64Ty(Func.getContext());
-            Value *test = builder.CreateAlloca(I64, nullptr, "test");
-            Value *fncast = new PtrToIntInst(gFnAddr, I64, "fncast", &Ins);
-            builder.CreateStore(fncast, test);
-            LoadInst *ld = builder.CreateLoad(test, fncast);
-            Value *tofn = new IntToPtrInst(ld, fn->getType(), "tofncast", &Ins);
-
-            builder.CreateCall(tofn);
-	    */
-
-            /*
-            IntegerType *I32 = Type::getInt32Ty(Func.getContext());
-
-            Value* store = builder.CreateAlloca(I32, nullptr, "A");
-            Value *Cast = new PtrToIntInst(gFnAddr, I32, "globalfn_cast", &Ins);
-            LoadInst *load2 = builder.CreateLoad(Cast);
-            builder.CreateCall(load2);
-
-            builder.CreateStore(Cast, store);
-            LoadInst *load2 = builder.CreateLoad(store);
-            builder.CreateCall(load2);
-            */
+            //builder.CreateStore(gFnAddr, store);
+            //builder.CreateCall(gFnAddr);
 
           }
         }

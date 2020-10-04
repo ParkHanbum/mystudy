@@ -7,22 +7,26 @@
 //
 // License: MIT
 //=============================================================================
-void foo() { }
-void bar() {foo(); }
-void fez() {bar(); }
+
+/*
+void foo() {
+	puts("called foo\n");
+}
+void bar() {
+	puts("called bar\n");
+	foo();
+}
+void fez() {
+	puts("called fez\n");
+	bar();
+}
+*/
+
+void fez() {
+	puts("called fez\n");
+}
 
 int main() {
-  foo();
-  bar();
   fez();
-
-  void (*t)();
-  t = foo;
-  t(1);
-  t = bar;
-  t();
-  t = fez;
-  t();
-
   return 0;
 }
