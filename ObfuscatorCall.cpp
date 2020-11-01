@@ -67,18 +67,6 @@ Constant *CreateGlobalFunction(Module &M, Function &func) {
 }*/
 
 Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
-  std::string name;
-  name.append("TTTT"); name.append(func.getName());
-
-  func.getType()->print(errs(), false);
-  GlobalVariable* fnPtr = new GlobalVariable(/*Module=*/M, 
-      /*Type=*/ Type::getInt64Ty(func.getContext()),
-      /*isConstant=*/ true,
-      /*Linkage=*/ GlobalValue::ExternalLinkage,
-      /*Initializer=*/ nullptr, // has initializer, specified below
-      /*Name=*/StringRef(name));
-
-  IntegerType *I64 = Type::getInt64Ty(func.getContext());
   /*
   Value *fncast = new PtrToIntInst(&func, I64, "fncast", &*func.getEntryBlock().getFirstInsertionPt());
   errs() << "\n======================\n";
@@ -89,32 +77,30 @@ Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
   cont = dyn_cast<Constant>(fncast);
   */
 
-//  @test2 = dso_local global i64 ptrtoint (i8* getelementptr (i8, i8* bitcast (i32 ()* @foo to i8*), i64 1) to i64), align 8i
-  errs() << "\n======================\n";
+  std::string name;
+  name.append("TTTT"); name.append(func.getName());
+  func.getType()->print(errs(), false);
+  GlobalVariable* fnPtr = new GlobalVariable(/*Module=*/M, 
+      /*Type=*/ Type::getInt64Ty(func.getContext()),
+      /*isConstant=*/ true,
+      /*Linkage=*/ GlobalValue::ExternalLinkage,
+      /*Initializer=*/ nullptr, // has initializer, specified below
+      /*Name=*/StringRef(name));
+
+  IntegerType *I64 = Type::getInt64Ty(func.getContext());
+
   // i8* bitcast (void ()* @fez to i8*)
   Constant *const_ptr_5 = ConstantExpr::getBitCast(&func, Type::getInt8PtrTy(func.getContext()));
-// Constant *const_ptr_5 = ConstantExpr::getCast(Instruction::BitCast, &func, Type::getInt8PtrTy(func.getContext()));
-  const_ptr_5->print(errs(), false);
-  errs() << "\n======================\n";
 
   // (i8* getelementptr (i8, i8* bitcast (i32 ()* @foo to i8*), i64 1) 
   Constant *One = ConstantInt::get(I64, 1);
   Constant *const_ptr_6 = ConstantExpr::getGetElementPtr(Type::getInt8Ty(func.getContext()), const_ptr_5, One);
-  // Constant *const_ptr_6 = ConstantExpr::getCast(Instruction::GetElementPtr, const_ptr_5, Type::getInt8PtrTy(func.getContext()));
-  const_ptr_6->print(errs(), false);
 
   // constant i64 ptrtoint (void ()* @fez to i64)
   Constant *const_ptr_7 = ConstantExpr::getPtrToInt(const_ptr_6, I64);
-  const_ptr_7->print(errs(), false);
-
-  errs() << "\n======================\n";
-
 
   fnPtr->setInitializer(const_ptr_7);
-//  fnPtr->setInitializer(dyn_cast<Constant>(fncast));
-
   return fnPtr;
-
 }
 
 
