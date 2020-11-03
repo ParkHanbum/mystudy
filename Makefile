@@ -16,29 +16,40 @@ else
 LOADABLE_MODULE_OPTIONS=-shared -Wl,-O1
 endif
 
-PACKAGE		:= Obfuscator
-STRING-PASS	:= $(PACKAGE)String
-STRING-PASS-SO	:= $(STRING-PASS).so
-STRING-PASS-OBJS:= $(STRING-PASS).op
-BITCODE_SRC 	:= String.c
-BITCODE 	:= String.bc
+PACKAGE			:= Obfuscator
+STRING-PASS		:= $(PACKAGE)String
+STRING-PASS-SO		:= $(STRING-PASS).so
+STRING-PASS-OBJS	:= $(STRING-PASS).op
+STRING-PASS-TEST	:= String.c
+STRING-PASS-BC		:= String.bc
 
-CALL-PASS	:= $(PACKAGE)Call
-CALL-PASS-SO	:= $(CALL-PASS).so
-CALL-PASS-OBJS	:= $(CALL-PASS).op
-CALL-PASS-TEST 	:= $(CALL-PASS)Test.c
-CALL-PASS-BC 	:= $(CALL-PASS)Test.bc
+CALL-PASS		:= $(PACKAGE)Call
+CALL-PASS-SO		:= $(CALL-PASS).so
+CALL-PASS-OBJS		:= $(CALL-PASS).op
+CALL-PASS-TEST		:= $(CALL-PASS)Test.c
+CALL-PASS-BC		:= $(CALL-PASS)Test.bc
+
+PRINTER-PASS		:= Printer
+PRINTER-PASS-SO		:= $(PRINTER-PASS).so
+PRINTER-PASS-OBJS	:= $(PRINTER-PASS).op
+
+# examples
+EX		:= Ex-
+ifstate		:= $(EX)ifstate
+switch		:= $(EX)switch
+
+EXAMPLE_SRCS 	:= $(ifstate).c $(switch).c
 
 CXX := clang++
 
-default: $(CALL-PASS-SO) $(STRING-PASS-SO)
+default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(PRINTER-PASS-SO)
 
 %.op : $(SRC_DIR)/%.cpp
 	@echo 2. Compile $@ by Compiling $*.cpp
 	$(CXX) -o $@ -c $(CPPFLAGS) $(CXXFLAGS) $<
 
 %.bc : $(SRC_DIR)/%.c
-	@echo 2. Compile $@ by Compiling $*.cpp
+	@echo 2. Compile $@ by Compiling $*.c
 	clang -emit-llvm -o $@ -c $<
 
 $(STRING-PASS-SO) : $(STRING-PASS-OBJS)
@@ -48,11 +59,19 @@ $(STRING-PASS-SO) : $(STRING-PASS-OBJS)
 $(CALL-PASS-SO) : $(CALL-PASS-OBJS)
 	$(CXX) -o $@ $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^
 
-run: $(BITCODE) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO)
-	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(BITCODE) -o $(BITCODE).bin 
-	llvm-dis $(BITCODE).bin
+$(PRINTER-PASS-SO) : $(PRINTER-PASS-OBJS)
+	$(CXX) -o $@ $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^
+
+
+run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(ifstate).bc $(switch).bc
+	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
+	llvm-dis $(STRING-PASS-BC).bin
 	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
 	llvm-dis $(CALL-PASS-BC).bin
+	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(ifstate).bc -o $(ifstate).bin 
+	llvm-dis $(ifstate).bin
+	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(switch).bc -o $(switch).bin 
+	llvm-dis $(switch).bin
 
 clean::
 	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO)
