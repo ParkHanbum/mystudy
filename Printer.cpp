@@ -28,9 +28,6 @@ void Printer::printInst(llvm::Instruction& inst)
 
 bool Printer::handleInst(llvm::Instruction& inst)
 {
-  for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
-    Value *el = start->get();	
-  }
 
   printInst(inst);
   return true;
