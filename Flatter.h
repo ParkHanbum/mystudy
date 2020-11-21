@@ -3,6 +3,8 @@
 
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
+#include <string>
+#include <algorithm>
 
 struct Flatter : public llvm::PassInfoMixin<Flatter> {
   // requirements
@@ -12,8 +14,11 @@ struct Flatter : public llvm::PassInfoMixin<Flatter> {
 
   // plugin
   bool handleInst(llvm::Instruction& inst);
+  bool handleInst(llvm::Instruction* inst);
   void printOperands(llvm::Instruction& inst);
   void printInst(llvm::Instruction& inst);
+  void printBB(llvm::BasicBlock* bb);
+  int getLabel(llvm::BasicBlock* bb);
 };
 
 struct LegacyFlatter : public llvm::ModulePass {
