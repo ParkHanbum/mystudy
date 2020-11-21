@@ -1,4 +1,4 @@
-#include "Printer.h"
+#include "Flatter.h"
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -8,7 +8,7 @@
 
 using namespace llvm;
 
-void Printer::printOperands(llvm::Instruction& inst)
+void Flatter::printOperands(llvm::Instruction& inst)
 {
   for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
     Value *el = start->get();	
@@ -18,7 +18,7 @@ void Printer::printOperands(llvm::Instruction& inst)
   }
 }
 
-void Printer::printInst(llvm::Instruction& inst)
+void Flatter::printInst(llvm::Instruction& inst)
 {
   errs() << "\n=================================================================\n";
   errs() << "Instruction : " <<  inst.getOpcodeName() << " \t print: ";
@@ -26,7 +26,7 @@ void Printer::printInst(llvm::Instruction& inst)
   printOperands(inst);
 }
 
-bool Printer::handleInst(llvm::Instruction& inst)
+bool Flatter::handleInst(llvm::Instruction& inst)
 {
 
   printInst(inst);
@@ -35,9 +35,9 @@ bool Printer::handleInst(llvm::Instruction& inst)
 
 
 //-----------------------------------------------------------------------------
-// Printer implementation
+// Flatter implementation
 //-----------------------------------------------------------------------------
-bool Printer::runOnModule(Module &M) {
+bool Flatter::runOnModule(Module &M) {
   bool Instrumented = false;
 
   // Function name <--> IR variable that holds the call counter
@@ -63,7 +63,7 @@ bool Printer::runOnModule(Module &M) {
   return true;
 }
 
-PreservedAnalyses Printer::run(llvm::Module &M,
+PreservedAnalyses Flatter::run(llvm::Module &M,
                                           llvm::ModuleAnalysisManager &) {
   bool Changed = runOnModule(M);
 
@@ -71,7 +71,7 @@ PreservedAnalyses Printer::run(llvm::Module &M,
                   : llvm::PreservedAnalyses::all());
 }
 
-bool LegacyPrinter::runOnModule(llvm::Module &M) {
+bool LegacyFlatter::runOnModule(llvm::Module &M) {
   bool Changed = Impl.runOnModule(M);
 
   return Changed;
@@ -80,14 +80,14 @@ bool LegacyPrinter::runOnModule(llvm::Module &M) {
 //-----------------------------------------------------------------------------
 // New PM Registration
 //-----------------------------------------------------------------------------
-llvm::PassPluginLibraryInfo getPrinterPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "Printer", LLVM_VERSION_STRING,
+llvm::PassPluginLibraryInfo getFlatterPluginInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "Flatter", LLVM_VERSION_STRING,
           [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, ModulePassManager &MPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
-                  if (Name == "Printer") {
-                    MPM.addPass(Printer());
+                  if (Name == "Flatter") {
+                    MPM.addPass(Flatter());
                     return true;
                   }
                   return false;
@@ -97,17 +97,17 @@ llvm::PassPluginLibraryInfo getPrinterPluginInfo() {
 
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
-  return getPrinterPluginInfo();
+  return getFlatterPluginInfo();
 }
 
 //-----------------------------------------------------------------------------
 // Legacy PM Registration
 //-----------------------------------------------------------------------------
-char LegacyPrinter::ID = 0;
+char LegacyFlatter::ID = 0;
 
 // Register the pass - required for (among others) opt
-static RegisterPass<LegacyPrinter>
-    X(/*PassArg=*/"Printer",
-      /*Name=*/"LegacyPrinter",
+static RegisterPass<LegacyFlatter>
+    X(/*PassArg=*/"Flatter",
+      /*Name=*/"LegacyFlatter",
       /*CFGOnly=*/false,
       /*is_analysis=*/false);
