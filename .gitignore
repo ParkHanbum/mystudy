@@ -3,3 +3,7 @@
 *.swo
 *.swp
 *log
+*.bc
+*.bin
+*.ll
+

@@ -2,13 +2,16 @@
 
 int main()
 {
-    int i = 0;
+    int i = 0, j = 0;
     i =  i == 0 ? 1: 2;
 
     if (i == 0)
-        return 1;
-    else
-        return 10;
+	    j = 1;
 
-    return 0;
+    if (i == 0)
+        i *= 1;
+    else
+	i *= 10;
+
+    return i;
 }

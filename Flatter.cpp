@@ -67,22 +67,24 @@ void Flatter::printBB(llvm::BasicBlock* bb)
   bb->print(errs(), false);
 }
 
-void Flatter::transIf(BranchInst* inst, BasicBlock* switchBB, SwitchInst* Switch, Value* Case)
+void Flatter::transIf(BranchInst* inst, BasicBlock* br_bb, SwitchInst* Switch,BasicBlock* switchBB,  Value* Case)
 {
   const Function* func = inst->getFunction();
   IntegerType* I32 = Type::getInt32Ty(func->getContext());
 
-	Value *cond = inst->getCondition();
-	errs() << "\n ========= check ==============  \n";
-	cond->print(errs(), false);
+	BranchInst::Create(switchBB, inst);
 
-	if (isa<CmpInst>(cond))
-	{
-		errs() << "\n ========= check ==============  \n";
-		printInst(cast<CmpInst>(cond));
-	}
-	errs() << "\n ========= check ==============  \n";
 
+	// move comp, branch inst to new bb
+	int label = getLabel(br_bb);
+	BasicBlock* bb = BasicBlock::Create(func->getContext(), "", (Function *)func);
+	CmpInst* cond = cast<CmpInst>(inst->getCondition());
+	BasicBlock::iterator iter = bb->getFirstInsertionPt();
+	cond->moveBefore(&*iter);
+	inst->moveBefore(&*iter);
+	ConstantInt* val4 = ConstantInt::get(I32, label);
+	Switch->addCase(val4, bb);
+	/*
   for (int i = 0; i < inst->getNumSuccessors(); i++) {
     BasicBlock* el = inst->getSuccessor(i);
     int label = getLabel(el);
@@ -95,7 +97,11 @@ void Flatter::transIf(BranchInst* inst, BasicBlock* switchBB, SwitchInst* Switch
     builder.CreateStore(val, Case);
     BranchInst* temp = BranchInst::Create(switchBB, BB);
     inst->setSuccessor(i, BB);
+		el->removeFromParent();
+		//printBB(el);
+		//el->moveBefore(bb);
   }
+	*/
 }
 
 
@@ -107,7 +113,7 @@ void Flatter::flatting(Function *Func)
 	BasicBlock *switchBB = BasicBlock::Create(Func->getContext(), "", Func);
 	IRBuilder<> builder(switchBB);
 	IntegerType *I32 = Type::getInt32Ty(Func->getContext());
-	auto val = ConstantInt::get(I32, 1);
+	auto val = ConstantInt::get(I32, 0);
 	Value *Case = builder.CreateAlloca(I32, nullptr, "CASE");
 	Value *store = builder.CreateStore(val, Case);
 	Value *load = builder.CreateLoad(Case);
@@ -115,10 +121,10 @@ void Flatter::flatting(Function *Func)
 	for (llvm::Function::iterator BB = Func->begin(), E = Func->end(); BB != E; ++BB)
 	{
 		Instruction *instr = BB->getTerminator();
-		if (isa<BranchInst>(instr) && cast<BranchInst>(instr)->isConditional())
+		if (nullptr != instr && isa<BranchInst>(instr) && cast<BranchInst>(instr)->isConditional())
 		{
 			BranchInst *brInst = dyn_cast<BranchInst>(instr);
-			transIf(brInst, switchBB, swInst, Case);
+			transIf(brInst, &*BB, swInst, switchBB, Case);
 		}
 	}
 }
@@ -148,9 +154,11 @@ bool Flatter::runOnModule(Module &M) {
 			BB.print(errs(), false);
 			errs() << "\n======================== [bb] =========================\n";
 
+			/*
 			for (auto &Ins : BB) {
 				handleInst(Ins);
 			}
+			*/
 		}
 	}
 

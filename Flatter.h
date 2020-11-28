@@ -57,7 +57,7 @@ struct Flatter : public llvm::PassInfoMixin<Flatter> {
   // plugin
   bool handleInst(llvm::Instruction& inst);
   bool handleInst(llvm::Instruction* inst);
-  void transIf(llvm::BranchInst* inst, llvm::BasicBlock* bb, llvm::SwitchInst* Switch, llvm::Value* Case);
+  void transIf(llvm::BranchInst* inst, llvm::BasicBlock* br_bb, llvm::SwitchInst* Switch, llvm::BasicBlock* switch_bb, llvm::Value* Case);
   void printOperands(llvm::Instruction& inst);
   void printInst(llvm::Instruction& inst);
   void printInst(const llvm::Instruction* inst);
