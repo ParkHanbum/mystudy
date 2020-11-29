@@ -47,6 +47,7 @@
 #include "llvm/IR/UseListOrder.h"
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
+#include "llvm/IR/CFG.h"
 
 struct Flatter : public llvm::PassInfoMixin<Flatter> {
   // requirements
@@ -58,9 +59,12 @@ struct Flatter : public llvm::PassInfoMixin<Flatter> {
   bool handleInst(llvm::Instruction& inst);
   bool handleInst(llvm::Instruction* inst);
   void transIf(llvm::BranchInst* inst, llvm::BasicBlock* br_bb, llvm::SwitchInst* Switch, llvm::BasicBlock* switch_bb, llvm::Value* Case);
+  void transBr(llvm::BranchInst* brInst, llvm::SwitchInst* swInst, llvm::Value* Case);
+  void handleTerminator(llvm::BranchInst* brInst, llvm::SwitchInst* swInst, llvm::Value* Case);
+
   void printOperands(llvm::Instruction& inst);
   void printInst(llvm::Instruction& inst);
-  void printInst(const llvm::Instruction* inst);
+  void printInst(llvm::Instruction* inst);
 
   void printBB(llvm::BasicBlock* bb);
   int getLabel(llvm::BasicBlock* bb);

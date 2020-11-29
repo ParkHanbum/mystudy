@@ -2,7 +2,7 @@
 
 using namespace llvm;
 
-int Flatter::getLabel(llvm::BasicBlock* bb)
+int Flatter::getLabel(BasicBlock* bb)
 {
   std::string Str;
 
@@ -15,13 +15,13 @@ int Flatter::getLabel(llvm::BasicBlock* bb)
   }
 
   Str.erase(std::remove(Str.begin(), Str.end(), '%'), Str.end());
-  errs() << "STR : " << Str;
+  errs() << "STR : [" << Str << "]";
   if (!Str.empty())
     return std::stoi(Str);
   return 0;
 }
 
-void Flatter::printOperands(llvm::Instruction& inst)
+void Flatter::printOperands(Instruction& inst)
 {
   for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
     Value *el = start->get();	
@@ -40,93 +40,113 @@ void Flatter::printOperands(llvm::Instruction& inst)
   }
 }
 
-void Flatter::printInst(llvm::Instruction& inst)
+void Flatter::printInst(Instruction& inst)
 {
   errs() << "\n=================[Instruction]======================\n";
-  errs() << "Instruction : " <<  inst.getOpcodeName() << " \t print: ";
+  errs() << "Instruction : " <<  inst.getOpcodeName() << " " << getLabel(inst.getParent()) << " \t print: ";
   inst.print(errs(), false);
   printOperands(inst);
 }
 
-void Flatter::printInst(const Instruction* inst)
+void Flatter::printInst(Instruction* inst)
 {
   errs() << "\n=================[Instruction]======================\n";
   errs() << "Instruction : " <<  inst->getOpcodeName() << " \t print: ";
   inst->print(errs(), false);
 }
 
-bool Flatter::handleInst(llvm::Instruction& inst)
+bool Flatter::handleInst(Instruction& inst)
 {
   printInst(inst);
   return true;
 }
 
-void Flatter::printBB(llvm::BasicBlock* bb)
+void Flatter::printBB(BasicBlock* bb)
 {
   errs() << "\n=================[BasicBlock]======================\n";
   bb->print(errs(), false);
 }
 
-void Flatter::transIf(BranchInst* inst, BasicBlock* br_bb, SwitchInst* Switch,BasicBlock* switchBB,  Value* Case)
-{
-  const Function* func = inst->getFunction();
-  IntegerType* I32 = Type::getInt32Ty(func->getContext());
-
-	BranchInst::Create(switchBB, inst);
-
-
-	// move comp, branch inst to new bb
-	int label = getLabel(br_bb);
-	BasicBlock* bb = BasicBlock::Create(func->getContext(), "", (Function *)func);
-	CmpInst* cond = cast<CmpInst>(inst->getCondition());
-	BasicBlock::iterator iter = bb->getFirstInsertionPt();
-	cond->moveBefore(&*iter);
-	inst->moveBefore(&*iter);
-	ConstantInt* val4 = ConstantInt::get(I32, label);
-	Switch->addCase(val4, bb);
-	/*
-  for (int i = 0; i < inst->getNumSuccessors(); i++) {
-    BasicBlock* el = inst->getSuccessor(i);
-    int label = getLabel(el);
-    ConstantInt* val4 = ConstantInt::get(I32, label);
-    Switch->addCase(val4, el);
-
-    BasicBlock* BB = BasicBlock::Create(func->getContext(), "", (Function *)func);
-    IRBuilder<> builder(BB);
-    auto val = ConstantInt::get(I32, label);
-    builder.CreateStore(val, Case);
-    BranchInst* temp = BranchInst::Create(switchBB, BB);
-    inst->setSuccessor(i, BB);
-		el->removeFromParent();
-		//printBB(el);
-		//el->moveBefore(bb);
-  }
-	*/
-}
-
-
 void Flatter::flatting(Function *Func)
 {
-	BasicBlock *defaultBB = BasicBlock::Create(Func->getContext(), "", Func);
-	// ReturnInst *retInst = ReturnInst::Create(Func->getContext(), defaultBB);
+	BasicBlock* entry = &Func->getEntryBlock();
+	Instruction* term = entry->getTerminator();
+	if (nullptr == term || !isa<BranchInst>(term))
+		return;
 
-	BasicBlock *switchBB = BasicBlock::Create(Func->getContext(), "", Func);
-	IRBuilder<> builder(switchBB);
 	IntegerType *I32 = Type::getInt32Ty(Func->getContext());
-	auto val = ConstantInt::get(I32, 0);
-	Value *Case = builder.CreateAlloca(I32, nullptr, "CASE");
-	Value *store = builder.CreateStore(val, Case);
-	Value *load = builder.CreateLoad(Case);
-	SwitchInst *swInst = SwitchInst::Create(load, defaultBB, 0, switchBB);
-	for (llvm::Function::iterator BB = Func->begin(), E = Func->end(); BB != E; ++BB)
+
+	//BasicBlock *defaultBB = BasicBlock::Create(Func->getContext(), "", Func);
+	//defaultBB->moveAfter(entry);
+	BasicBlock *switchBB = BasicBlock::Create(Func->getContext(), "", Func);
+	//switchBB->moveAfter(defaultBB);
+	switchBB->moveAfter(entry);
+
+
+	//BasicBlock *zeroBB = BasicBlock::Create(Func->getContext(), "", Func);
+	//zeroBB->moveAfter(switchBB);
+
+	/*
+	Instruction* first = &*zeroBB->getFirstInsertionPt();
+	BranchInst::Create(defaultBB, term);
+	if (cast<BranchInst>(term))
 	{
-		Instruction *instr = BB->getTerminator();
-		if (nullptr != instr && isa<BranchInst>(instr) && cast<BranchInst>(instr)->isConditional())
-		{
-			BranchInst *brInst = dyn_cast<BranchInst>(instr);
-			transIf(brInst, &*BB, swInst, switchBB, Case);
-		}
+		BranchInst *br = cast<BranchInst>(term);
+		CmpInst* cond = cast<CmpInst>(br->getCondition());
+		cond->moveAfter(first);
 	}
+
+	term->moveAfter(first);
+	
+	IRBuilder<> builder_ent(defaultBB);
+	Value *Case = builder_ent.CreateAlloca(I32, nullptr, "CASE");
+	*/
+
+
+	Instruction *Case = new AllocaInst(I32, 0, "CASE", &*entry->getFirstInsertionPt());
+
+	IRBuilder<> builder_sw(switchBB);
+	Value *load = builder_sw.CreateLoad(Case);
+	SwitchInst *swInst = SwitchInst::Create(load, nullptr, 0, switchBB);
+
+	for (Function::iterator BB = Func->begin(), E = Func->end(); BB != E; ++BB)
+	{
+		// add case
+		BasicBlock* bb = &*BB;
+		BasicBlock* end = &*E;
+		if (bb == switchBB) continue; // skip make case for itself
+		// if (bb == defaultBB) continue;
+		if (bb == entry) continue;
+		if (bb == end) continue;
+		int label = getLabel(bb);
+		ConstantInt *case_number = ConstantInt::get(I32, label);
+		swInst->addCase(case_number, bb);
+
+		// handle branch , do not need handle conditional branch
+		term = bb->getTerminator();
+		if (nullptr == term || !isa<BranchInst>(term) || cast<BranchInst>(term)->isConditional())
+			continue;
+
+		// handle br only
+		BasicBlock* el = term->getSuccessor(0);
+		label = getLabel(el);
+		case_number = ConstantInt::get(I32, label);
+		new StoreInst(case_number, Case, term);
+		BranchInst::Create(switchBB, term); 
+		
+		el->removePredecessor(term->getParent());
+		term->eraseFromParent();
+	}
+
+	/*
+	auto val = ConstantInt::get(I32, getLabel(zeroBB));
+	Value *store = builder_ent.CreateStore(val, Case);
+	builder_ent.CreateBr(switchBB);
+	*/
+
+	BasicBlock *whileBB = BasicBlock::Create(Func->getContext(), "", Func);
+	BranchInst::Create(switchBB, whileBB); 
+	swInst->setDefaultDest(whileBB);
 }
 
 
@@ -138,9 +158,9 @@ bool Flatter::runOnModule(Module &M) {
   bool Instrumented = false;
 
   // Function name <--> IR variable that holds the call counter
-  llvm::StringMap<Constant *> CallCounterMap;
+  StringMap<Constant *> CallCounterMap;
   // Function name <--> IR variable that holds the function name
-  llvm::StringMap<Constant *> FuncNameMap;
+  StringMap<Constant *> FuncNameMap;
 
   auto &CTX = M.getContext();
 
@@ -154,11 +174,9 @@ bool Flatter::runOnModule(Module &M) {
 			BB.print(errs(), false);
 			errs() << "\n======================== [bb] =========================\n";
 
-			/*
 			for (auto &Ins : BB) {
-				handleInst(Ins);
+				//printInst(Ins);
 			}
-			*/
 		}
 	}
 
@@ -166,15 +184,15 @@ bool Flatter::runOnModule(Module &M) {
 }
 
 
-PreservedAnalyses Flatter::run(llvm::Module &M,
-    llvm::ModuleAnalysisManager &) {
+PreservedAnalyses Flatter::run(Module &M,
+    ModuleAnalysisManager &) {
   bool Changed = runOnModule(M);
 
   return (Changed ? llvm::PreservedAnalyses::none()
       : llvm::PreservedAnalyses::all());
 }
 
-bool LegacyFlatter::runOnModule(llvm::Module &M) {
+bool LegacyFlatter::runOnModule(Module &M) {
   bool Changed = Impl.runOnModule(M);
 
   return Changed;
