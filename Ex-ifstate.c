@@ -1,22 +1,25 @@
-
+#include <stdio.h>
 
 int main()
 {
+	char *test = "test";
 	int i = 0, j = 0;
 
 	if (i == 0)
 		j = 1;
 
 	if (i == 0)
-		i *= 1;
+		printf("%s %d \n", test, i);
 	else if (i == 1)
-		i *= 10;
+		printf("%s %d \n", test, i);
 	else if (i == 2)
-		i *= 20;
+		printf("%s %d \n", test, i);
 	else if (i == 3)
-		i *= 30;
+		printf("%s %d \n", test, i);
 	else if (i == 4)
-		i *= 40;
+		printf("%s %d \n", test, i);
+
+	printf("%s %d \n", test, i);
 
 	return i;
 }

@@ -74,6 +74,9 @@ void Flatter::flatting(Function *Func)
 	if (nullptr == term || !isa<BranchInst>(term))
 		return;
 
+	SymbolTableList<Instruction> *entrylist = &entry->getInstList();
+
+
 	IntegerType *I32 = Type::getInt32Ty(Func->getContext());
 
 	//BasicBlock *defaultBB = BasicBlock::Create(Func->getContext(), "", Func);
@@ -82,10 +85,15 @@ void Flatter::flatting(Function *Func)
 	//switchBB->moveAfter(defaultBB);
 	switchBB->moveAfter(entry);
 
+	BasicBlock *zeroBB = BasicBlock::Create(Func->getContext(), "", Func);
+	zeroBB->moveAfter(switchBB);
+	SymbolTableList<Instruction> *zerolist = &zeroBB->getInstList();
 
-	//BasicBlock *zeroBB = BasicBlock::Create(Func->getContext(), "", Func);
-	//zeroBB->moveAfter(switchBB);
-
+	zerolist->push_front(entrylist->remove(term));
+	BranchInst *br = cast<BranchInst>(term);
+	CmpInst* cond = cast<CmpInst>(br->getCondition());
+	zerolist->push_front(entrylist->remove(cond));
+	
 	/*
 	Instruction* first = &*zeroBB->getFirstInsertionPt();
 	BranchInst::Create(defaultBB, term);
@@ -100,6 +108,8 @@ void Flatter::flatting(Function *Func)
 	
 	IRBuilder<> builder_ent(defaultBB);
 	Value *Case = builder_ent.CreateAlloca(I32, nullptr, "CASE");
+
+	term->eraseFromParent();
 	*/
 
 
@@ -138,11 +148,10 @@ void Flatter::flatting(Function *Func)
 		term->eraseFromParent();
 	}
 
-	/*
+	IRBuilder<> builder_ent(entry);
 	auto val = ConstantInt::get(I32, getLabel(zeroBB));
 	Value *store = builder_ent.CreateStore(val, Case);
 	builder_ent.CreateBr(switchBB);
-	*/
 
 	BasicBlock *whileBB = BasicBlock::Create(Func->getContext(), "", Func);
 	BranchInst::Create(switchBB, whileBB); 
