@@ -42,8 +42,11 @@ EX		:= Ex-
 ifstate		:= $(EX)ifstate
 switch		:= $(EX)switch
 while		:= $(EX)while
+call		:= $(EX)call
 
-EXAMPLE_SRCS 	:= $(ifstate).c $(switch).c $(while).c
+EXAMPLE_SRCS 	:= $(ifstate).c $(switch).c $(while).c $(call).c
+
+CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 
 CXX := clang++
@@ -73,8 +76,6 @@ $(PRINTER-PASS-SO) : $(PRINTER-PASS-OBJS)
 run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(FLATTER-PASS-SO) $(PRINTER-PASS-SO) $(ifstate).bc $(switch).bc $(while).bc
 	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
 	llvm-dis $(STRING-PASS-BC).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
-	llvm-dis $(CALL-PASS-BC).bin
 	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(ifstate).bc -o $(ifstate).bin 
 	llvm-dis $(ifstate).bin
 	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(switch).bc -o $(switch).bin 
@@ -82,6 +83,14 @@ run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(FLATT
 	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(while).bc -o $(while).bin 
 	llvm-dis $(while).bin
 
+obfstring: $(STRING-PASS-BC) $(STRING-PASS-SO)
+	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
+	llvm-dis $(STRING-PASS-BC).bin
+
+obfcall: $(CALL-EX-BC) $(CALL-PASS-BC) $(CALL-PASS-SO)
+	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
+	llvm-dis $(CALL-PASS-BC).bin
+	llvm-dis $(CALL-EX-BC)
 
 flatting: $(FLATTER-PASS-SO) $(ifstate).bc
 	opt -load-pass-plugin=$(SRC_DIR)/$^ -passes="$(FLATTER-PASS)" < $(FLATTER-PASS-BC) -o $(FLATTER-PASS-BC).bin 
