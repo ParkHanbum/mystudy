@@ -8,7 +8,8 @@
 
 using namespace llvm;
 
-void DynamicCallCounter::printOperands(llvm::Instruction& inst)
+
+void ObfuscatorCall::printOperands(llvm::Instruction& inst)
 {
   for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
     Value *el = start->get();	
@@ -17,7 +18,7 @@ void DynamicCallCounter::printOperands(llvm::Instruction& inst)
   }
 }
 
-void DynamicCallCounter::handleCallInst(llvm::Instruction& inst)
+void ObfuscatorCall::handleCallInst(llvm::Instruction& inst)
 {
   errs() << "\n=================================================================\n";
   errs() << "Instruction : " <<  inst.getOpcodeName() << " \t print: ";
@@ -25,7 +26,7 @@ void DynamicCallCounter::handleCallInst(llvm::Instruction& inst)
   printOperands(inst);
 }
 
-bool DynamicCallCounter::handleInst(llvm::Instruction& inst)
+bool ObfuscatorCall::handleInst(llvm::Instruction& inst)
 {
   for (User::op_iterator start = inst.op_begin(), end = inst.op_end(); start != end; ++start) {
     Value *el = start->get();	
@@ -105,9 +106,9 @@ Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
 
 
 //-----------------------------------------------------------------------------
-// DynamicCallCounter implementation
+// ObfuscatorCall implementation
 //-----------------------------------------------------------------------------
-bool DynamicCallCounter::runOnModule(Module &M) {
+bool ObfuscatorCall::runOnModule(Module &M) {
   bool Instrumented = false;
 
   // Function name <--> IR variable that holds the call counter
@@ -194,7 +195,7 @@ bool DynamicCallCounter::runOnModule(Module &M) {
   return true;
 }
 
-PreservedAnalyses DynamicCallCounter::run(llvm::Module &M,
+PreservedAnalyses ObfuscatorCall::run(llvm::Module &M,
                                           llvm::ModuleAnalysisManager &) {
   bool Changed = runOnModule(M);
 
@@ -202,7 +203,7 @@ PreservedAnalyses DynamicCallCounter::run(llvm::Module &M,
                   : llvm::PreservedAnalyses::all());
 }
 
-bool LegacyDynamicCallCounter::runOnModule(llvm::Module &M) {
+bool LegacyObfuscatorCall::runOnModule(llvm::Module &M) {
   bool Changed = Impl.runOnModule(M);
 
   return Changed;
@@ -211,14 +212,14 @@ bool LegacyDynamicCallCounter::runOnModule(llvm::Module &M) {
 //-----------------------------------------------------------------------------
 // New PM Registration
 //-----------------------------------------------------------------------------
-llvm::PassPluginLibraryInfo getDynamicCallCounterPluginInfo() {
+llvm::PassPluginLibraryInfo getObfuscatorCallPluginInfo() {
   return {LLVM_PLUGIN_API_VERSION, "ObfuscatorCall", LLVM_VERSION_STRING,
           [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, ModulePassManager &MPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "ObfuscatorCall") {
-                    MPM.addPass(DynamicCallCounter());
+                    MPM.addPass(ObfuscatorCall());
                     return true;
                   }
                   return false;
@@ -228,17 +229,17 @@ llvm::PassPluginLibraryInfo getDynamicCallCounterPluginInfo() {
 
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
-  return getDynamicCallCounterPluginInfo();
+  return getObfuscatorCallPluginInfo();
 }
 
 //-----------------------------------------------------------------------------
 // Legacy PM Registration
 //-----------------------------------------------------------------------------
-char LegacyDynamicCallCounter::ID = 0;
+char LegacyObfuscatorCall::ID = 0;
 
 // Register the pass - required for (among others) opt
-static RegisterPass<LegacyDynamicCallCounter>
+static RegisterPass<LegacyObfuscatorCall>
     X(/*PassArg=*/"ObfuscatorCall",
-      /*Name=*/"LegacyDynamicCallCounter",
+      /*Name=*/"LegacyObfuscatorCall",
       /*CFGOnly=*/false,
       /*is_analysis=*/false);

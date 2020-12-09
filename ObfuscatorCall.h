@@ -1,9 +1,9 @@
 //==============================================================================
 // FILE:
-//    DynamicCallCounter.h
+//    ObfuscatorCall.h
 //
 // DESCRIPTION:
-//    Declares the DynamicCallCounter pass for the new and the legacy pass
+//    Declares the ObfuscatorCall pass for the new and the legacy pass
 //    managers.
 //
 // License: MIT
@@ -17,7 +17,7 @@
 //------------------------------------------------------------------------------
 // New PM interface
 //------------------------------------------------------------------------------
-struct DynamicCallCounter : public llvm::PassInfoMixin<DynamicCallCounter> {
+struct ObfuscatorCall : public llvm::PassInfoMixin<ObfuscatorCall> {
   bool handleInst(llvm::Instruction& inst);
   void printOperands(llvm::Instruction& inst);
   void handleCallInst(llvm::Instruction& inst);
@@ -29,12 +29,12 @@ struct DynamicCallCounter : public llvm::PassInfoMixin<DynamicCallCounter> {
 //------------------------------------------------------------------------------
 // Legacy PM interface
 //------------------------------------------------------------------------------
-struct LegacyDynamicCallCounter : public llvm::ModulePass {
+struct LegacyObfuscatorCall : public llvm::ModulePass {
   static char ID;
-  LegacyDynamicCallCounter() : ModulePass(ID) {}
+  LegacyObfuscatorCall() : ModulePass(ID) {}
   bool runOnModule(llvm::Module &M) override;
 
-  DynamicCallCounter Impl;
+  ObfuscatorCall Impl;
 };
 
 #endif
