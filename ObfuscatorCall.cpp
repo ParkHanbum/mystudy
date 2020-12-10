@@ -111,10 +111,10 @@ Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
 bool ObfuscatorCall::runOnModule(Module &M) {
   bool Instrumented = false;
 
-  // Function name <--> IR variable that holds the call counter
-  llvm::StringMap<Constant *> CallCounterMap;
   // Function name <--> IR variable that holds the function name
   llvm::StringMap<Constant *> FuncNameMap;
+  // Function name <--> Function address
+  llvm::StringMap<Constant *> CallCounterMap;
 
   auto &CTX = M.getContext();
 
@@ -129,6 +129,7 @@ bool ObfuscatorCall::runOnModule(Module &M) {
   }
 
   for (auto &Func : M) {
+    IntegerType *I64 = Type::getInt64Ty(Func.getContext());
     for (auto &BB : Func) {
       for (auto &Ins : BB) {
         if (handleInst(Ins)) {
@@ -142,50 +143,10 @@ bool ObfuscatorCall::runOnModule(Module &M) {
           if (fn) {
             Constant *gFnAddr = FuncNameMap[fn->getName()];
             gFnAddr->print(errs(), false);
-	    errs() << "\n";
-	    gFnAddr->getType()->print(errs(), false);
-            errs() << "\n=====================================\n";
-            /*
-            LoadInst *load = builder.CreateLoad(gFnAddr, true);
-            builder.CreateCall(load);
-            */
-
-	    /*
-	    %0 = load i64, i64* @test2, align 8
-	    %sub = sub nsw i64 %0, 1
-	    %1 = inttoptr i64 %sub to i32 (...)*
-	    %call = call i32 (...) %1()
-	    */
-	    LoadInst *load = builder.CreateLoad(gFnAddr);
-	    Value *tofn = new IntToPtrInst(load, fn->getType(), "tofncast", &Ins);
+            LoadInst *load = builder.CreateLoad(gFnAddr);
+            Value* orig = builder.CreateSub(load, ConstantInt::get(I64, 1));
+            Value *tofn = new IntToPtrInst(orig, fn->getType(), "tofncast", &Ins);
             builder.CreateCall(tofn);
-
-            // NEW
-	    /*
-            PointerType *pt = Type::getInt32PtrTy(Func.getContext());
-            IntegerType *I64 = Type::getInt64Ty(Func.getContext());
-            Value *test = builder.CreateAlloca(I64, nullptr, "test");
-            Value *fncast = new PtrToIntInst(gFnAddr, I64, "fncast", &Ins);
-            builder.CreateStore(fncast, test);
-            LoadInst *ld = builder.CreateLoad(test, fncast);
-            Value *tofn = new IntToPtrInst(ld, fn->getType(), "tofncast", &Ins);
-
-            builder.CreateCall(tofn);
-	    */
-
-            /*
-            IntegerType *I32 = Type::getInt32Ty(Func.getContext());
-
-            Value* store = builder.CreateAlloca(I32, nullptr, "A");
-            Value *Cast = new PtrToIntInst(gFnAddr, I32, "globalfn_cast", &Ins);
-            LoadInst *load2 = builder.CreateLoad(Cast);
-            builder.CreateCall(load2);
-
-            builder.CreateStore(Cast, store);
-            LoadInst *load2 = builder.CreateLoad(store);
-            builder.CreateCall(load2);
-            */
-
           }
         }
       }
