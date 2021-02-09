@@ -1,7 +1,6 @@
 *.op
 *.so
-*.swo
-*.swp
+*.sw*
 *log
 *.bc
 *.bin
