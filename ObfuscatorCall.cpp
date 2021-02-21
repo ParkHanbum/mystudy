@@ -1,5 +1,4 @@
-#include <iostream>
-#include <random>
+#include "ObfuscatorCall.h"
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -7,7 +6,6 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Support/Alignment.h"
 
-#include "ObfuscatorCall.h"
 #include "common.h"
 
 

@@ -33,9 +33,9 @@ FLATTER-PASS		:= Flatter
 FLATTER-PASS-SO		:= $(FLATTER-PASS).so
 FLATTER-PASS-OBJS	:= $(FLATTER-PASS).op
 
-PRINTER-PASS		:= Printer
-PRINTER-PASS-SO		:= $(PRINTER-PASS).so
-PRINTER-PASS-OBJS	:= $(PRINTER-PASS).op
+SKELETON-PASS		:= Skeleton
+SKELETON-PASS-SO	:= $(SKELETON-PASS).so
+SKELETON-PASS-OBJS	:= $(SKELETON-PASS).op
 
 CFI-PASS		:= CFI
 CFI-PASS-SO		:= $(CFI-PASS).so
@@ -55,9 +55,11 @@ CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 CFI-EX-BC := $(cfi).bc
 
+CC := clang
 CXX := clang++
+OPT := opt
 
-default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(PRINTER-PASS-SO) $(FLATTER-PASS-SO)
+default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(SKELETON-PASS-SO) $(FLATTER-PASS-SO)
 
 %.op : $(SRC_DIR)/%.cpp
 	@echo 2. GEN $@ by Compiling $*.cpp
@@ -65,7 +67,7 @@ default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(PRINTER-PASS-SO) $(FLATTER-PASS-SO)
 
 %.bc : $(SRC_DIR)/%.c
 	@echo 2. GEN $@ by Compiling $*.c
-	clang -emit-llvm -o $@ -c $<
+	$(CC) -emit-llvm -o $@ -c $<
 
 $(STRING-PASS-SO) : $(STRING-PASS-OBJS)
 	@echo 3. Linking $@ with LLVM libraries
@@ -76,48 +78,48 @@ $(CALL-PASS-SO) : $(CALL-PASS-OBJS)
 $(FLATTER-PASS-SO) : $(FLATTER-PASS-OBJS)
 	$(CXX) $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^ -o $@ 
 
-$(PRINTER-PASS-SO) : $(PRINTER-PASS-OBJS)
+$(SKELETON-PASS-SO) : $(SKELETON-PASS-OBJS)
 	$(CXX) $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^ -o $@ 
 
 $(CFI-PASS-SO) : $(CFI-PASS-OBJS)
 	$(CXX) $(LOADABLE_MODULE_OPTIONS) $(CXXFLAGS) $(LDFLAGS) $^ -o $@ 
 
-run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(FLATTER-PASS-SO) $(PRINTER-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
-	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
+run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(FLATTER-PASS-SO) $(SKELETON-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
+	$(OPT) -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
 	llvm-dis $(STRING-PASS-BC).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(ifstate).bc -o $(ifstate).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(ifstate).bc -o $(ifstate).bin 
 	llvm-dis $(ifstate).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(switch).bc -o $(switch).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(switch).bc -o $(switch).bin 
 	llvm-dis $(switch).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(while).bc -o $(while).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(while).bc -o $(while).bin 
 	llvm-dis $(while).bin
 
-debug: $(PRINTER-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(ifstate).bc -o $(ifstate).bin 
+debug: $(SKELETON-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(ifstate).bc -o $(ifstate).bin 
 	llvm-dis $(ifstate).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(switch).bc -o $(switch).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(switch).bc -o $(switch).bin 
 	llvm-dis $(switch).bin
-	opt -load-pass-plugin $(SRC_DIR)/$(PRINTER-PASS-SO) -passes="$(PRINTER-PASS)" $(while).bc -o $(while).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(while).bc -o $(while).bin 
 	llvm-dis $(while).bin
 
 
 obfstring: $(STRING-PASS-BC) $(STRING-PASS-SO)
-	opt -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
+	$(OPT) -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
 	llvm-dis $(STRING-PASS-BC).bin
 
 obfcall: $(CALL-EX-BC) $(CALL-PASS-BC) $(CALL-PASS-SO)
-	opt -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
 	llvm-dis $(CALL-PASS-BC).bin
 	llvm-dis $(CALL-EX-BC)
 
 flatting: $(FLATTER-PASS-SO) $(ifstate).bc
-	opt -load-pass-plugin=$(SRC_DIR)/$^ -passes="$(FLATTER-PASS)" < $(FLATTER-PASS-BC) -o $(FLATTER-PASS-BC).bin 
+	$(OPT) -load-pass-plugin=$(SRC_DIR)/$^ -passes="$(FLATTER-PASS)" < $(FLATTER-PASS-BC) -o $(FLATTER-PASS-BC).bin 
 	llvm-dis $(FLATTER-PASS-BC).bin
 
 cfi: $(CFI-EX-BC) $(CFI-PASS-BC) $(CFI-PASS-SO)
-	clang -o nocfi Ex-CFI.c
+	$(CC) -o nocfi Ex-CFI.c
 	#clang -o cfi Ex-CFI.c -flto -fsanitize=cfi -fvisibility=default
-	opt -load-pass-plugin $(SRC_DIR)/$(CFI-PASS-SO) -passes="$(CFI-PASS)" $(CFI-EX-BC) -o $(CFI-EX-BC).bin 
+	$(OPT) -load-pass-plugin $(SRC_DIR)/$(CFI-PASS-SO) -passes="$(CFI-PASS)" $(CFI-EX-BC) -o $(CFI-EX-BC).bin 
 	llvm-dis $(CFI-EX-BC).bin
 
 
@@ -125,5 +127,5 @@ cfi: $(CFI-EX-BC) $(CFI-PASS-BC) $(CFI-PASS-SO)
 clean::
 	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO)
 	$(QUIET)rm -f $(CALL-PASS-OBJS) $(CALL-PASS-SO)
-	$(QUIET)rm -f $(PRINTER-PASS-OBJS) $(PRINTER-PASS-SO)
-	$(QUIET)rm -f *.ll *.bc *.bin
+	$(QUIET)rm -f $(SKELETON-PASS-OBJS) $(SKELETON-PASS-SO)
+	$(QUIET)rm -f *.ll *.bc *.bin *.op

@@ -39,32 +39,7 @@ bool DynamicCallCounter::handleInst(llvm::Instruction& inst)
   return false;
 }
 
-/*
-Constant *CreateGlobalFunction(Module &M, Function &func) {
-  auto &CTX = M.getContext();
-  Type* type = func.getReturnType();
 
-  std::string name;
-  name.append("TTTT");
-  name.append(func.getName());
-  // This will insert a declaration into M
-  Constant *NewGlobalVar =
-      M.getOrInsertGlobal(name, type);
-
-  // This will change the declaration into definition (and initialise to 0)
-  GlobalVariable *NewGV = M.getNamedGlobal(name);
-  errs() << NewGV << '\n';
-  NewGV->print(errs(),false);
-  NewGV->setLinkage(GlobalValue::CommonLinkage);
-  NewGV->setAlignment(8);
-  // NewGV->setInitializer();
-
-  type->print(errs(), false);
-  errs() << '\n' << func.getName() << '\n';
-  NewGlobalVar->print(errs(), false);
-  errs() << '\n';
-  return NewGlobalVar;
-}*/
 
 Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
   std::string name;

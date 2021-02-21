@@ -1,16 +1,15 @@
 #ifndef LLVM_TUTOR_INSTRUMENT_BASIC_H
 #define LLVM_TUTOR_INSTRUMENT_BASIC_H
 
-#include "llvm/IR/PassManager.h"
-#include "llvm/Pass.h"
+#include "common.h"
 
 struct CFI : public llvm::PassInfoMixin<CFI> {
-  bool handleInst(llvm::Instruction& inst);
-  void printOperands(llvm::Instruction& inst);
-  void printInst(llvm::Instruction& inst);
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &);
   bool runOnModule(llvm::Module &M);
+  void handleFunction(llvm::Function *func);
+  void handleBB(llvm::BasicBlock *bb);
+  void handleInst(llvm::Instruction *inst);
 };
 
 struct LegacyCFI : public llvm::ModulePass {

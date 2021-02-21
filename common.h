@@ -1,11 +1,17 @@
 #ifndef LLVM_OBFUSCATOR_COMMON_H
 #define LLVM_OBFUSCATOR_COMMON_H
 
+#include <iostream>
+#include <random>
+
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/IR/Value.h"
+
 
 using namespace llvm;
 
@@ -14,8 +20,9 @@ void debugOperands(Instruction *inst)
   for (User::op_iterator start = inst->op_begin(), end = inst->op_end(); start != end; ++start)
   {
     Value *el = start->get();
-    errs() << "\n\t opcode : " << el->getName() << "\t type : ";
-    el->getType()->print(errs(), false);
+    errs() << "\t" << el->getName() << "\t type : ";
+    if (el->getType())
+    	el->getType()->print(errs(), false);
     errs() << "\n";
   }
 }
@@ -25,8 +32,9 @@ inline void debugInst(llvm::Value *value)
   if (isa<Instruction>(value)) {
     Instruction *inst = dyn_cast<Instruction>(value);
     errs() << "=======================================================\n";
-    errs() << "Instruction : " << inst->getOpcodeName() << " \t print: ";
+    errs() << "" << inst->getOpcodeName() << "\t";
     inst->print(errs(), false);
+    errs() << "\n";
     debugOperands(inst);
     errs() << "=======================================================\n";
   }
@@ -35,6 +43,7 @@ inline void debugInst(llvm::Value *value)
     Constant *cont = dyn_cast<Constant>(value);
     errs() << "=======================================================\n";
     cont->print(errs(), false);
+    errs() << "\n";
     errs() << "=======================================================\n";
   }
 }

@@ -1,4 +1,4 @@
-#include "CFI.h"
+#include "Skeleton.h"
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -11,48 +11,36 @@
 using namespace llvm;
 
 
-void CFI::handleInst(Instruction *inst)
-{
-  if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
-  {
-    auto *call = dyn_cast<CallInst>(inst);
-    Function *func = call->getCalledFunction();
-
-    if (func)
-      func->print(errs(), false);
-  }
-}
-
-void CFI::handleBB(BasicBlock *bb)
-{
-   for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
-   {
-     Instruction *inst = &*iter;
-     handleInst(inst);
-   }
-}
-
-void CFI::handleFunction(Function *func)
-{
-   for (Function::iterator BB = func->begin(), E = func->end(); BB != E; ++BB)
-   {
-     BasicBlock *bb = &*BB;
-     handleBB(bb);
-   }
-}
-
 //-----------------------------------------------------------------------------
-// CFI implementation
+// Skeleton implementation
 //-----------------------------------------------------------------------------
-bool CFI::runOnModule(Module &M) {
+bool Skeleton::runOnModule(Module &M) {
+  bool Instrumented = false;
+
+  // Function name <--> IR variable that holds the call counter
+  llvm::StringMap<Constant *> CallCounterMap;
+  // Function name <--> IR variable that holds the function name
+  llvm::StringMap<Constant *> FuncNameMap;
+
+  auto &CTX = M.getContext();
+
+
   for (auto &Func : M) {
-    handleFunction(&Func);
+    for (auto &BB : Func) {
+      errs() << "\n======================== [bb] =========================\n";
+      BB.print(errs(), false);
+      errs() << "\n======================== [bb] =========================\n";
+
+      for (auto &Ins : BB) {
+        debugInst(&Ins);
+      }
+    }
   }
 
   return true;
 }
 
-PreservedAnalyses CFI::run(llvm::Module &M,
+PreservedAnalyses Skeleton::run(llvm::Module &M,
     llvm::ModuleAnalysisManager &) {
   bool Changed = runOnModule(M);
 
@@ -60,7 +48,7 @@ PreservedAnalyses CFI::run(llvm::Module &M,
       : llvm::PreservedAnalyses::all());
 }
 
-bool LegacyCFI::runOnModule(llvm::Module &M) {
+bool LegacySkeleton::runOnModule(llvm::Module &M) {
   bool Changed = Impl.runOnModule(M);
 
   return Changed;
@@ -69,14 +57,14 @@ bool LegacyCFI::runOnModule(llvm::Module &M) {
 //-----------------------------------------------------------------------------
 // New PM Registration
 //-----------------------------------------------------------------------------
-llvm::PassPluginLibraryInfo getCFIPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "CFI", LLVM_VERSION_STRING,
+llvm::PassPluginLibraryInfo getSkeletonPluginInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "Skeleton", LLVM_VERSION_STRING,
     [](PassBuilder &PB) {
       PB.registerPipelineParsingCallback(
           [](StringRef Name, ModulePassManager &MPM,
             ArrayRef<PassBuilder::PipelineElement>) {
-          if (Name == "CFI") {
-          MPM.addPass(CFI());
+          if (Name == "Skeleton") {
+          MPM.addPass(Skeleton());
           return true;
           }
           return false;
@@ -86,17 +74,17 @@ llvm::PassPluginLibraryInfo getCFIPluginInfo() {
 
 extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
 llvmGetPassPluginInfo() {
-  return getCFIPluginInfo();
+  return getSkeletonPluginInfo();
 }
 
 //-----------------------------------------------------------------------------
 // Legacy PM Registration
 //-----------------------------------------------------------------------------
-char LegacyCFI::ID = 0;
+char LegacySkeleton::ID = 0;
 
 // Register the pass - required for (among others) opt
-static RegisterPass<LegacyCFI>
-X(/*PassArg=*/"CFI",
-    /*Name=*/"LegacyCFI",
+static RegisterPass<LegacySkeleton>
+X(/*PassArg=*/"Skeleton",
+    /*Name=*/"LegacySkeleton",
     /*CFGOnly=*/false,
     /*is_analysis=*/false);
