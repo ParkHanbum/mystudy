@@ -16,10 +16,53 @@ void CFI::handleInst(Instruction *inst)
   if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
   {
     auto *call = dyn_cast<CallInst>(inst);
-    Function *func = call->getCalledFunction();
+    
+    if (!call->isIndirectCall())
+      return;
+    
+    debugInst(call);
+    auto *fnType = call->getFunctionType();
 
-    if (func)
-      func->print(errs(), false);
+    if (fnType)
+      fnType->print(errs(), true);
+
+    Value *v = call->getCalledValue();
+    Value *sv = v->stripPointerCasts();
+    errs() << "fname : " << sv->getName() << v->getName() <<"\n" ;
+    debugInst(v);
+    debugInst(sv);
+  }
+  else if (isa<StoreInst>(inst))
+  {
+    errs() << "store \n";
+    debugInst(inst);
+
+   if (inst->getNumOperands() != 2)
+     return;
+
+   Value *op1 = inst->getOperand(0);
+   Value *op2 = inst->getOperand(1);
+   if (!op1->getType()->isPointerTy() || !op2->getType()->isPointerTy())
+     return;
+
+   if (!isa<Constant>(op1))
+     return;
+
+   Function *pFunc = NULL;
+   // extract function pointer from op1 if it is ConstantExpr.
+   if (isa<ConstantExpr>(op1)) {
+     errs() << "constantExpr";
+     auto *expr = dyn_cast<ConstantExpr>(op1);
+     if (isa<Function>(expr->getOperand(0)))
+       pFunc = dyn_cast<Function>(expr->getOperand(0));
+   } else if (isa<Function>(op1)) {
+     errs() << "function";
+     pFunc = dyn_cast<Function>(op1);
+   }
+
+   // handle function pointer
+   if (pFunc)
+     errs() << "handle Function pointer\n";
   }
 }
 
@@ -39,6 +82,8 @@ void CFI::handleFunction(Function *func)
      BasicBlock *bb = &*BB;
      handleBB(bb);
    }
+
+   
 }
 
 //-----------------------------------------------------------------------------

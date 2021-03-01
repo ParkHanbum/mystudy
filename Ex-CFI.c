@@ -21,7 +21,13 @@ void auth(struct auth *a) {
         a->func = &success;
     else
         a->func = &failure;
+}
 
+void test()
+{
+    struct auth *a;
+    a->func = &auth;
+    a->func(a);
 }
 
 int main(int argc, char **argv) {

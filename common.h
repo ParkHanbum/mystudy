@@ -15,14 +15,44 @@
 
 using namespace llvm;
 
+void debugType(Type *ty)
+{
+
+}
+
 void debugOperands(Instruction *inst)
 {
   for (User::op_iterator start = inst->op_begin(), end = inst->op_end(); start != end; ++start)
   {
     Value *el = start->get();
-    errs() << "\t" << el->getName() << "\t type : ";
-    if (el->getType())
-    	el->getType()->print(errs(), false);
+    if (el->hasName()) {
+      errs() << "\t" << el->getName() << " type : ";
+      // el->print(errs(), true);
+    }
+    if (el->getType()) {
+      auto *ty = el->getType();
+      errs() << ty->getNumContainedTypes();
+      switch(ty->getTypeID()) {
+        case Type::FunctionTyID:
+          errs() << "FunctionTy";
+          break;
+        case Type::PointerTyID:
+          errs() << "PointerTy:"<< dyn_cast<PointerType>(ty)->getAddressSpace();
+          break;
+        case Type::StructTyID:
+          errs() << "StructTy";
+          break;
+        case Type::IntegerTyID:
+          errs() << "IntegerTy";
+          break;
+        default:
+          errs() << ty->getTypeID();
+          break;
+      }
+      errs() << "  ";
+      ty->print(errs(), true, false);
+
+    }
     errs() << "\n";
   }
 }

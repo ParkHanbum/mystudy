@@ -7,7 +7,7 @@ endif
 SRC_DIR ?= $(PWD)
 LDFLAGS += $(shell $(LLVM_CONFIG) --ldflags)
 COMMON_FLAGS :=
-CXXFLAGS += -g $(COMMON_FLAGS) $(shell $(LLVM_CONFIG) --cxxflags) -fno-rtti
+CXXFLAGS += -g $(COMMON_FLAGS) $(shell $(LLVM_CONFIG) --cxxflags) 
 CPPFLAGS += -g $(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR) -fPIC
 
 ifeq ($(shell uname),Darwin)
@@ -55,9 +55,9 @@ CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 CFI-EX-BC := $(cfi).bc
 
-CC := clang
-CXX := clang++
-OPT := opt
+CC := clang-10
+CXX := clang++-10
+OPT := opt-10
 
 default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(SKELETON-PASS-SO) $(FLATTER-PASS-SO)
 
