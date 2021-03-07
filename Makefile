@@ -55,15 +55,15 @@ CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 CFI-EX-BC := $(cfi).bc
 
-CC := clang-10
-CXX := clang++-10
-OPT := opt-10
+CC := clang
+CXX := clang++
+OPT := opt
 
 default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(SKELETON-PASS-SO) $(FLATTER-PASS-SO)
 
 %.op : $(SRC_DIR)/%.cpp
 	@echo 2. GEN $@ by Compiling $*.cpp
-	$(CXX) -g -pg -o $@ -c $(CPPFLAGS) $(CXXFLAGS) $<
+	$(CXX) -o $@ -c $(CPPFLAGS) $(CXXFLAGS) $<
 
 %.bc : $(SRC_DIR)/%.c
 	@echo 2. GEN $@ by Compiling $*.c

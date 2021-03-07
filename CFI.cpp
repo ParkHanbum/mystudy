@@ -1,6 +1,7 @@
 #include "CFI.h"
 
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -10,6 +11,14 @@
 
 using namespace llvm;
 
+/// createBasicBlock - Create an LLVM basic block.
+llvm::BasicBlock *createBasicBlock(
+    llvm::LLVMContext &context,
+    const Twine &name = "",
+    llvm::Function *parent = nullptr,
+    llvm::BasicBlock *before = nullptr) {
+  return llvm::BasicBlock::Create(context, name, parent, before);
+}
 
 void CFI::handleInst(Instruction *inst)
 {
@@ -26,11 +35,33 @@ void CFI::handleInst(Instruction *inst)
     if (fnType)
       fnType->print(errs(), true);
 
+
     Value *v = call->getCalledValue();
     Value *sv = v->stripPointerCasts();
-    errs() << "fname : " << sv->getName() << v->getName() <<"\n" ;
-    debugInst(v);
-    debugInst(sv);
+
+    LLVMContext &context = inst->getFunction()->getContext();
+    IRBuilder<> Builder(inst);
+    Type *ty = Type::getInt8PtrTy(context);
+    Value *CastedCallee = Builder.CreateBitCast(sv, ty);
+    Function *func = Intrinsic::getDeclaration(inst->getModule(), Intrinsic::type_test);
+
+    Metadata *MD = MDString::get(context, "fnPtr");
+    Value *TypeID = MetadataAsValue::get(context, MD);
+    Instruction *TypeTest = Builder.CreateCall(func, {CastedCallee, TypeID});
+
+    BasicBlock *head = TypeTest->getParent();
+    BasicBlock *tail = head->splitBasicBlock(TypeTest, "cont");
+
+    // BasicBlock *Cont = createBasicBlock(context, "cont");
+    BasicBlock *Trap = createBasicBlock(context, "trap", inst->getFunction(), tail);
+    Trap->moveAfter(head);
+
+    Builder.CreateCondBr(TypeTest, tail, Trap);
+    Builder.SetInsertPoint(Trap);
+    CallInst *TrapCall = Builder.CreateCall(Intrinsic::getDeclaration(inst->getModule(), Intrinsic::trap));
+    TrapCall->setDoesNotReturn();
+    TrapCall->setDoesNotThrow();
+    Builder.CreateUnreachable();
   }
   else if (isa<StoreInst>(inst))
   {
@@ -82,8 +113,6 @@ void CFI::handleFunction(Function *func)
      BasicBlock *bb = &*BB;
      handleBB(bb);
    }
-
-   
 }
 
 //-----------------------------------------------------------------------------

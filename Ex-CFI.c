@@ -8,35 +8,11 @@ struct auth {
     void (*func)(struct auth*);
 };
 
-void success() {
-    printf("Authenticated successfully\n");
-}
-
-void failure() {
-    printf("Authentication failed\n");
-}
-
-void auth(struct auth *a) {
-    if (strcmp(a->pass, "pass") == 0)
-        a->func = &success;
-    else
-        a->func = &failure;
-}
-
-void test()
-{
-    struct auth *a;
-    a->func = &auth;
-    a->func(a);
+void fnptr(struct auth *a) {
 }
 
 int main(int argc, char **argv) {
     struct auth a;
-
-    a.func = &auth;
-
-    printf("Enter your password:\n");
-    scanf("%s", &a.pass);
-
+    a.func = &fnptr;
     a.func(&a);
 }
