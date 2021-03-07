@@ -64,6 +64,8 @@ void CFI::handleFunction(Function *func)
         Function *func = Intrinsic::getDeclaration(inst->getModule(), Intrinsic::type_test);
 
         Metadata *MD = MDString::get(context, "fnPtr");
+        MDNode *N = MDNode::get(context, MD);
+        func->setMetadata("fnptr", N);
         Value *TypeID = MetadataAsValue::get(context, MD);
         Instruction *TypeTest = Builder.CreateCall(func, {CastedCallee, TypeID});
         BasicBlock *TypeTestBB = TypeTest->getParent();
@@ -76,7 +78,8 @@ void CFI::handleFunction(Function *func)
         errs() << "DEBUGGGGGG";
         Instruction *temp = dyn_cast<Instruction>(CastedCallee); 
         Instruction *remove = temp->getNextNode();
-        remove->removeFromParent();
+        ContBB->removePredecessor(remove->getParent());
+        remove->eraseFromParent();
 
         // move @llvm.type.test to right position
         debugInst(TypeTest);
