@@ -49,19 +49,17 @@ void CFI::handleInst(Instruction *inst)
     Value *TypeID = MetadataAsValue::get(context, MD);
     Instruction *TypeTest = Builder.CreateCall(func, {CastedCallee, TypeID});
 
-    BasicBlock *head = TypeTest->getParent();
-    BasicBlock *tail = head->splitBasicBlock(TypeTest, "cont");
-
-    // BasicBlock *Cont = createBasicBlock(context, "cont");
-    BasicBlock *Trap = createBasicBlock(context, "trap", inst->getFunction(), tail);
-    Trap->moveAfter(head);
-
-    Builder.CreateCondBr(TypeTest, tail, Trap);
-    Builder.SetInsertPoint(Trap);
+    BasicBlock *TypeTestBB = TypeTest->getParent();
+    BasicBlock *ContBB = TypeTestBB->splitBasicBlock(TypeTest, "cont");
+    BasicBlock *TrapBB = TypeTestBB->splitBasicBlock(TypeTest, "trap");
+    /*
+    Instruction *CondBR = Builder.CreateCondBr(TypeTest, ContBB, TrapBB);
+    Builder.SetInsertPoint(TrapBB);
     CallInst *TrapCall = Builder.CreateCall(Intrinsic::getDeclaration(inst->getModule(), Intrinsic::trap));
     TrapCall->setDoesNotReturn();
     TrapCall->setDoesNotThrow();
     Builder.CreateUnreachable();
+    */
   }
   else if (isa<StoreInst>(inst))
   {
@@ -121,6 +119,18 @@ void CFI::handleFunction(Function *func)
 bool CFI::runOnModule(Module &M) {
   for (auto &Func : M) {
     handleFunction(&Func);
+  }
+
+  for (auto &Func : M) {
+    for (auto &BB : Func) {
+      errs() << "\n======================== [bb] =========================\n";
+      BB.print(errs(), false);
+      errs() << "\n======================== [bb] =========================\n";
+
+      for (auto &Ins : BB) {
+        debugInst(&Ins);
+      }
+    }
   }
 
   return true;
