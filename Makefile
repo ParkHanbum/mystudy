@@ -1,20 +1,4 @@
-LLVM_CONFIG?=llvm-config
-
-ifndef VERBOSE
-QUIET:=@
-endif
-
-SRC_DIR ?= $(PWD)
-LDFLAGS += $(shell $(LLVM_CONFIG) --ldflags)
-COMMON_FLAGS :=
-CXXFLAGS += -g $(COMMON_FLAGS) $(shell $(LLVM_CONFIG) --cxxflags) 
-CPPFLAGS += -g $(shell $(LLVM_CONFIG) --cppflags) -I$(SRC_DIR) -fPIC
-
-ifeq ($(shell uname),Darwin)
-LOADABLE_MODULE_OPTIONS=-bundle -undefined dynamic_lookup
-else
-LOADABLE_MODULE_OPTIONS=-shared -Wl,-O1
-endif
+include Makefile.include
 
 PACKAGE			:= Obfuscator
 STRING-PASS		:= $(PACKAGE)String
@@ -55,9 +39,11 @@ CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 CFI-EX-BC := $(cfi).bc
 
-CC := clang
-CXX := clang++
-OPT := opt
+CC := clang-10
+CXX := clang++-10
+OPT := opt-10
+DIS := llvm-dis-10
+
 
 default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(SKELETON-PASS-SO) $(FLATTER-PASS-SO)
 
@@ -86,43 +72,41 @@ $(CFI-PASS-SO) : $(CFI-PASS-OBJS)
 
 run: $(STRING-PASS-BC) $(STRING-PASS-SO) $(CALL-PASS-BC) $(CALL-PASS-SO) $(FLATTER-PASS-SO) $(SKELETON-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
 	$(OPT) -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" < $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
-	llvm-dis $(STRING-PASS-BC).bin
+	$(DIS) $(STRING-PASS-BC).bin
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(ifstate).bc -o $(ifstate).bin 
-	llvm-dis $(ifstate).bin
+	$(DIS) $(ifstate).bin
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(switch).bc -o $(switch).bin 
-	llvm-dis $(switch).bin
+	$(DIS) $(switch).bin
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(while).bc -o $(while).bin 
-	llvm-dis $(while).bin
+	$(DIS) $(while).bin
 
 debug: $(SKELETON-PASS-SO) $(CFI-EX-BC) $(ifstate).bc $(switch).bc $(while).bc
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(ifstate).bc -o $(ifstate).bin 
-	llvm-dis $(ifstate).bin
+	$(DIS) $(ifstate).bin
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(switch).bc -o $(switch).bin 
-	llvm-dis $(switch).bin
+	$(DIS) $(switch).bin
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(SKELETON-PASS-SO) -passes="$(SKELETON-PASS)" $(while).bc -o $(while).bin 
-	llvm-dis $(while).bin
+	$(DIS) $(while).bin
 
 
 obfstring: $(STRING-PASS-BC) $(STRING-PASS-SO)
 	$(OPT) -load-pass-plugin=$(SRC_DIR)/$(STRING-PASS-SO) -passes="$(STRING-PASS)" $(STRING-PASS-BC) -o $(STRING-PASS-BC).bin 
-	llvm-dis $(STRING-PASS-BC).bin
+	$(DIS) $(STRING-PASS-BC).bin
 
 obfcall: $(CALL-EX-BC) $(CALL-PASS-BC) $(CALL-PASS-SO)
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(CALL-PASS-SO) -passes="$(CALL-PASS)" $(CALL-PASS-BC) -o $(CALL-PASS-BC).bin 
-	llvm-dis $(CALL-PASS-BC).bin
-	llvm-dis $(CALL-EX-BC)
+	$(DIS) $(CALL-PASS-BC).bin
+	$(DIS) $(CALL-EX-BC)
 
 flatting: $(FLATTER-PASS-SO) $(ifstate).bc
 	$(OPT) -load-pass-plugin=$(SRC_DIR)/$^ -passes="$(FLATTER-PASS)" < $(FLATTER-PASS-BC) -o $(FLATTER-PASS-BC).bin 
-	llvm-dis $(FLATTER-PASS-BC).bin
+	$(DIS) $(FLATTER-PASS-BC).bin
 
 cfi: $(CFI-EX-BC) $(CFI-PASS-BC) $(CFI-PASS-SO)
 	$(CC) -o nocfi Ex-CFI.c
 	#clang -o cfi Ex-CFI.c -flto -fsanitize=cfi -fvisibility=default
 	$(OPT) -load-pass-plugin $(SRC_DIR)/$(CFI-PASS-SO) -passes="$(CFI-PASS)" $(CFI-EX-BC) -o $(CFI-EX-BC).bin 
-	llvm-dis $(CFI-EX-BC).bin
-
-
+	$(DIS) $(CFI-EX-BC).bin
 
 clean::
 	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO)

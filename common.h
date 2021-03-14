@@ -78,6 +78,17 @@ inline void debugInst(llvm::Value *value)
   }
 }
 
+inline void debugBB(llvm::BasicBlock *bb)
+{
+  errs() << "==============[bb : " + bb->getName() + "]===============\n";
+
+  for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
+  {
+    Instruction *inst = &*iter;
+    debugInst(inst);
+  }
+}
+
 int getRandomV()
 {
   std::random_device rd;

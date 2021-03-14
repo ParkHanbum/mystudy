@@ -28,30 +28,28 @@ void CFI::handleBB(BasicBlock *bb)
 {
 }
 
+
 void CFI::handleFunction(Function *func)
 {
-  BasicBlock *bb;
-
   for (Function::iterator BB = func->begin(), E = func->end(); BB != E; ++BB)
   {
-    if (bb == &*BB)
-      continue;
-    
-    bb = &*BB;
-    Instruction *inst;
-
+    BasicBlock *bb = &*BB;
+    errs() << "inside handle BB \n";
     for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
     {
-      if (inst == &*iter)
-        continue;
-      inst = &*iter;
+      auto *inst = &*iter;
+
+      debugInst(inst);
+
       if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
       {
         auto *call = dyn_cast<CallInst>(inst);
 
         if (!call->isIndirectCall())
-          return;
+          continue;
 
+        errs() << "start handle instruction \n";
+        debugBB(inst->getParent());
         auto *fnType = call->getFunctionType();
 
         Value *v = call->getCalledValue();
@@ -75,14 +73,12 @@ void CFI::handleFunction(Function *func)
         TrapBB->insertInto(inst->getFunction(), ContBB);
 
         // remove branch instruction which created by splitBasicBlock calling
-        errs() << "DEBUGGGGGG";
         Instruction *temp = dyn_cast<Instruction>(CastedCallee); 
         Instruction *remove = temp->getNextNode();
         ContBB->removePredecessor(remove->getParent());
         remove->eraseFromParent();
 
         // move @llvm.type.test to right position
-        debugInst(TypeTest);
         TypeTest->removeFromParent();
         TypeTest->insertAfter(cast<Instruction>(CastedCallee));
 
@@ -94,11 +90,21 @@ void CFI::handleFunction(Function *func)
         TrapCall->setDoesNotThrow();
         Builder.CreateUnreachable();
 
-        return;
-      }
-    }
-  }
+        errs() << "DEBUGGGGG \n";
+        BasicBlock *startHere = inst->getParent();
+        iter = startHere->begin();
+        E = startHere->end();
+        while(1) {
+          if (&*BB == startHere)
+            break;
+          ++BB;
+        }
+        
+      } // end instruction
+    } // end basicblock
+  } // end function
 }
+
 
 //-----------------------------------------------------------------------------
 // CFI implementation
@@ -108,6 +114,7 @@ bool CFI::runOnModule(Module &M) {
     handleFunction(&Func);
   }
 
+  /*
   for (auto &Func : M) {
     for (auto &BB : Func) {
       errs() << "\n======================== [bb] =========================\n";
@@ -118,6 +125,7 @@ bool CFI::runOnModule(Module &M) {
       }
     }
   }
+  */
 
   return true;
 }
