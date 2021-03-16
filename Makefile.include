@@ -17,7 +17,7 @@ else
 endif
 
 
-CC := clang-10
-CXX := clang++-10
-OPT := opt-10
-DIS := llvm-dis-10
+CC := clang
+CXX := clang++
+OPT := opt
+DIS := llvm-dis
