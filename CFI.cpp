@@ -38,22 +38,21 @@ void CFI::handleFunction(Function *func)
     for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
     {
       auto *inst = &*iter;
-
-      debugInst(inst);
-
       if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
       {
         auto *call = dyn_cast<CallInst>(inst);
-
         if (!call->isIndirectCall())
           continue;
 
         errs() << "start handle instruction \n";
-        debugBB(inst->getParent());
         auto *fnType = call->getFunctionType();
-
-        Value *v = call->getCalledValue();
+        Value *v = call->getCalledOperand();
         Value *sv = v->stripPointerCasts();
+
+        if (isa<Instruction>(sv)) {
+          debugInst(inst);
+          backtrace_operands(dyn_cast<Instruction>(sv));
+        }
 
         LLVMContext &context = inst->getFunction()->getContext();
         IRBuilder<> Builder(inst);
@@ -99,8 +98,48 @@ void CFI::handleFunction(Function *func)
             break;
           ++BB;
         }
-        
-      } // end instruction
+
+      } // end handling for CallInst InvokeInst
+      else if (isa<StoreInst>(inst))
+      {
+        errs() << "store \n";
+        if (inst->getNumOperands() != 2)
+          continue;
+
+        Value *op1 = inst->getOperand(0);
+        Value *op2 = inst->getOperand(1);
+        if (!op1->getType()->isPointerTy() || !op2->getType()->isPointerTy())
+          continue;
+
+        if (!isa<Constant>(op1))
+          continue;
+
+        Function *pFunc = NULL;
+        // extract function pointer from op1 if it is ConstantExpr.
+        if (isa<ConstantExpr>(op1)) {
+          errs() << "constantExpr";
+          auto *expr = dyn_cast<ConstantExpr>(op1);
+          if (isa<Function>(expr->getOperand(0)))
+            pFunc = dyn_cast<Function>(expr->getOperand(0));
+        } else if (isa<Function>(op1)) {
+          errs() << "function";
+          pFunc = dyn_cast<Function>(op1);
+        }
+
+        // handle function pointer
+        if (pFunc) {
+          debugInst(inst);
+	  errs() << "op1 : ";
+	  op1->print(errs());
+	  errs() << "op2 : ";
+	  op2->print(errs());
+
+	  if (isa<Instruction>(op2)) {
+	  backtrace_operands(dyn_cast<Instruction>(op2));
+	  }
+          errs() << "handle Function pointer\n";
+        }
+      }
     } // end basicblock
   } // end function
 }
@@ -115,17 +154,17 @@ bool CFI::runOnModule(Module &M) {
   }
 
   /*
-  for (auto &Func : M) {
-    for (auto &BB : Func) {
-      errs() << "\n======================== [bb] =========================\n";
-      BB.print(errs(), false);
+     for (auto &Func : M) {
+     for (auto &BB : Func) {
+     errs() << "\n======================== [bb] =========================\n";
+     BB.print(errs(), false);
 
-      for (auto &Ins : BB) {
-        debugInst(&Ins);
-      }
-    }
-  }
-  */
+     for (auto &Ins : BB) {
+     debugInst(&Ins);
+     }
+     }
+     }
+     */
 
   return true;
 }

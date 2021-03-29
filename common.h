@@ -14,24 +14,27 @@
 
 
 using namespace llvm;
+using namespace std;
+
+#define SPACE ' '
 
 void debugType(Type *ty)
 {
 
 }
 
-void debugOperands(Instruction *inst)
+void debugOperands(Instruction *inst, int depth=0)
 {
   for (User::op_iterator start = inst->op_begin(), end = inst->op_end(); start != end; ++start)
   {
     Value *el = start->get();
     if (el->hasName()) {
-      errs() << "\t" << el->getName() << " type : ";
+      errs() << string(depth+1, SPACE) << el->getName() << " type : ";
       // el->print(errs(), true);
     }
     if (el->getType()) {
       auto *ty = el->getType();
-      errs() << ty->getNumContainedTypes();
+      errs() << string(depth+2, SPACE) << ty->getNumContainedTypes();
       switch(ty->getTypeID()) {
         case Type::FunctionTyID:
           errs() << "FunctionTy";
@@ -49,7 +52,7 @@ void debugOperands(Instruction *inst)
           errs() << ty->getTypeID();
           break;
       }
-      errs() << "  ";
+      errs() << SPACE;
       ty->print(errs(), true, false);
 
     }
@@ -57,24 +60,27 @@ void debugOperands(Instruction *inst)
   }
 }
 
-inline void debugInst(llvm::Value *value)
+inline void debugInst(llvm::Value *value, int depth=0, bool print_op=false)
 {
   if (isa<Instruction>(value)) {
     Instruction *inst = dyn_cast<Instruction>(value);
-    errs() << "=======================================================\n";
-    errs() << "" << inst->getOpcodeName() << "\t";
-    inst->print(errs(), false);
+
+    errs() << string(depth, SPACE) << inst->getOpcodeName() << SPACE;
+    if (isa<GetElementPtrInst>(value)) {
+        errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getAddressSpace() << "\n";
+        errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getPointerAddressSpace() << "\n";
+    }
+    inst->print(errs());
     errs() << "\n";
-    debugOperands(inst);
-    errs() << "=======================================================\n";
+    if (print_op)
+      debugOperands(inst, depth);
   }
 
   else if (isa<Constant>(value)) {
     Constant *cont = dyn_cast<Constant>(value);
-    errs() << "=======================================================\n";
-    cont->print(errs(), false);
+    errs() << string(depth, SPACE);
+    cont->print(errs());
     errs() << "\n";
-    errs() << "=======================================================\n";
   }
 }
 
@@ -86,6 +92,23 @@ inline void debugBB(llvm::BasicBlock *bb)
   {
     Instruction *inst = &*iter;
     debugInst(inst);
+  }
+}
+
+inline void backtrace_operands(Instruction *inst, int depth=0)
+{
+  debugInst(inst, depth);
+  for(User::op_iterator iter = inst->op_begin(), E = inst->op_end(); iter != E; ++iter)
+  {
+    Value *op = (&*iter)->get();
+
+    if (isa<Instruction>(op))
+      backtrace_operands(dyn_cast<Instruction>(op), depth+1);
+    else {
+      errs() << string(depth+1, SPACE);
+      op->print(errs());
+      errs() << '\n';
+    }
   }
 }
 
