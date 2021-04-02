@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <random>
+#include <string>
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Pass.h"
@@ -67,8 +68,8 @@ inline void debugInst(llvm::Value *value, int depth=0, bool print_op=false)
 
     errs() << string(depth, SPACE) << inst->getOpcodeName() << SPACE;
     if (isa<GetElementPtrInst>(value)) {
-        errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getAddressSpace() << "\n";
-        errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getPointerAddressSpace() << "\n";
+      errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getAddressSpace() << "\n";
+      errs() << "GEP : " << dyn_cast<GetElementPtrInst>(value)->getPointerAddressSpace() << "\n";
     }
     inst->print(errs());
     errs() << "\n";
@@ -97,7 +98,8 @@ inline void debugBB(llvm::BasicBlock *bb)
 
 inline void backtrace_operands(Instruction *inst, int depth=0)
 {
-  debugInst(inst, depth);
+  errs() << string(depth+1, SPACE) << to_string(depth) << "=";
+  debugInst(inst, depth+1);
   for(User::op_iterator iter = inst->op_begin(), E = inst->op_end(); iter != E; ++iter)
   {
     Value *op = (&*iter)->get();
@@ -105,7 +107,7 @@ inline void backtrace_operands(Instruction *inst, int depth=0)
     if (isa<Instruction>(op))
       backtrace_operands(dyn_cast<Instruction>(op), depth+1);
     else {
-      errs() << string(depth+1, SPACE);
+      errs() << string(depth+1, SPACE) << to_string(depth) << "=";
       op->print(errs());
       errs() << '\n';
     }

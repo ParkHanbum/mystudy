@@ -14,6 +14,8 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Operator.h"
 
+#include "../../common.h"
+
 using namespace llvm;
 
 
@@ -27,16 +29,26 @@ namespace {
     bool runOnFunction(Function &F) override {
       for (auto &BB : F) {
         for (auto &Inst : BB) {
+          APInt offset(64, 0);
           if (isa<GetElementPtrInst>(Inst))
           {
             GetElementPtrInst &gepi = cast<GetElementPtrInst>(Inst);
             GEPOperator &op = cast<GEPOperator>(gepi);
+
+            gepi.accumulateConstantOffset(F.getParent()->getDataLayout(), offset);
+
+            debugOperands(&gepi);
+            Type *ty = gepi.getSourceElementType();
+            Type *ty2 = gepi.getResultElementType();
             op.print(errs());
-            errs() << "\n";
+            errs() << "\t[SRC] "; 
+            ty->print(errs());
+            errs() << "\t[RES] ";
+            ty2->print(errs());
+            errs() << "\t" << offset << "\n\n";
           }
         }
       }
-      APInt offset;
 
       return false;
     }
@@ -44,7 +56,7 @@ namespace {
     // We don't modify the program, so we preserve all analyses.
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesAll();
-      //-
+      // no longer needed since datalayout merged into module.
       //AU.addRequired<DataLayout>();
     }
   };

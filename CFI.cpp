@@ -38,6 +38,21 @@ void CFI::handleFunction(Function *func)
     for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
     {
       auto *inst = &*iter;
+      // test
+      if (isa<AllocaInst>(inst) || isa<StoreInst>(inst)) {
+        auto count = inst->getNumUses();
+        errs() << count << "====== alloc ====\n";
+        for(Value::use_iterator U = inst->use_begin(), E = inst->use_end(); U != E; ++U)
+        {
+          Use *use = &*U;
+          User *user = use->getUser();
+          user->print(errs());
+
+          errs() << "\n";
+        }
+        errs() << "//end\n";
+      }
+
       if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
       {
         auto *call = dyn_cast<CallInst>(inst);
@@ -117,26 +132,21 @@ void CFI::handleFunction(Function *func)
         Function *pFunc = NULL;
         // extract function pointer from op1 if it is ConstantExpr.
         if (isa<ConstantExpr>(op1)) {
-          errs() << "constantExpr";
+          errs() << "constantExpr\n";
           auto *expr = dyn_cast<ConstantExpr>(op1);
           if (isa<Function>(expr->getOperand(0)))
             pFunc = dyn_cast<Function>(expr->getOperand(0));
         } else if (isa<Function>(op1)) {
-          errs() << "function";
+          errs() << "function\n";
           pFunc = dyn_cast<Function>(op1);
         }
 
         // handle function pointer
         if (pFunc) {
-          debugInst(inst);
-	  errs() << "op1 : ";
-	  op1->print(errs());
-	  errs() << "op2 : ";
-	  op2->print(errs());
-
-	  if (isa<Instruction>(op2)) {
-	  backtrace_operands(dyn_cast<Instruction>(op2));
-	  }
+          if (isa<Instruction>(op2)) {
+            debugInst(inst);
+            backtrace_operands(dyn_cast<Instruction>(op2));
+          }
           errs() << "handle Function pointer\n";
         }
       }
