@@ -7,6 +7,9 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Support/Alignment.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "common.h"
 
 using namespace llvm;
@@ -28,6 +31,46 @@ void CFI::handleBB(BasicBlock *bb)
 {
 }
 
+void findCallee(CallInst *call)
+{
+  errs() << "find callee : \n";
+  auto callee = call->getCalledOperand();
+
+  Instruction *inst = dyn_cast<Instruction>(callee);
+  AllocaInst *allocated = nullptr;
+  // where called allocated?
+  while (!(allocated = dyn_cast<AllocaInst>(inst))) {
+    if (auto v = dyn_cast<LoadInst>(callee)) {
+      if (!isa<Instruction>(inst)) {
+        errs() << "too rough to handle this case\n";
+        exit(1);
+      }
+      inst = dyn_cast<Instruction>(v->getPointerOperand());
+    }
+  }
+
+  errs() << "found allocation of callee\n";
+  allocated->print(errs());
+  errs() << "\n";
+
+  auto count = allocated->getNumUses();
+  errs() << "==== [users : " << count << " ] ====\n";
+  // to find where assigned
+  for(Value::use_iterator U = inst->use_begin(), E = inst->use_end(); U != E; ++U)
+  {
+    Use *use = &*U;
+    User *user = use->getUser();
+
+    // found storeinst which assigne value to callee.
+    if (StoreInst *st = dyn_cast<StoreInst>(user)) {
+      st->print(errs());
+    }
+
+    errs() << "\n";
+  }
+  errs() << "//end\n";
+
+}
 
 void CFI::handleFunction(Function *func)
 {
@@ -38,41 +81,17 @@ void CFI::handleFunction(Function *func)
     for (BasicBlock::iterator iter = bb->begin(), E = bb->end(); iter != E; ++iter)
     {
       auto *inst = &*iter;
-      // test
-      if (isa<AllocaInst>(inst) || isa<StoreInst>(inst)) {
-        auto count = inst->getNumUses();
-        errs() << count << "====== alloc ====\n";
-        for(Value::use_iterator U = inst->use_begin(), E = inst->use_end(); U != E; ++U)
-        {
-          Use *use = &*U;
-          User *user = use->getUser();
-          user->print(errs());
-
-          errs() << "\n";
-        }
-        errs() << "//end\n";
-      }
-
-      if (isa<CallInst>(inst) || isa<InvokeInst>(inst))
+      if (isa<CallInst>(inst))
       {
         auto *call = dyn_cast<CallInst>(inst);
         if (!call->isIndirectCall())
           continue;
 
-        errs() << "start handle instruction \n";
-        auto *fnType = call->getFunctionType();
-        Value *v = call->getCalledOperand();
-        Value *sv = v->stripPointerCasts();
-
-        if (isa<Instruction>(sv)) {
-          debugInst(inst);
-          backtrace_operands(dyn_cast<Instruction>(sv));
-        }
-
+        findCallee(call);
         LLVMContext &context = inst->getFunction()->getContext();
         IRBuilder<> Builder(inst);
         Type *ty = Type::getInt8PtrTy(context);
-        Value *CastedCallee = Builder.CreateBitCast(sv, ty);
+        Value *CastedCallee = Builder.CreateBitCast(call->getCalledOperand(), ty);
         Function *func = Intrinsic::getDeclaration(inst->getModule(), Intrinsic::type_test);
 
         Metadata *MD = MDString::get(context, "fnPtr");
