@@ -31,7 +31,7 @@ void CFI::handleBB(BasicBlock *bb)
 {
 }
 
-void findCallee(CallInst *call)
+Value* findCallee(CallInst *call)
 {
   errs() << "find callee : \n";
   auto callee = call->getCalledOperand();
@@ -62,14 +62,30 @@ void findCallee(CallInst *call)
     User *user = use->getUser();
 
     // found storeinst which assigne value to callee.
-    if (StoreInst *st = dyn_cast<StoreInst>(user)) {
-      st->print(errs());
-    }
+    if (StoreInst *si = dyn_cast<StoreInst>(user)) {
+      Value *siv = si->getValueOperand();
+      Value *sip = si->getPointerOperand();
+      
+      debugInst(siv);
+      debugInst(sip);
 
+      if (Instruction *temp = dyn_cast<Instruction>(sip))
+        if (temp != allocated)
+          continue;
+
+      debugOperands(si);
+      siv->getType()->print(errs());
+      errs() << siv->getName() << "\n";
+
+      if (isa<Function>(siv)) {
+        errs() << "Function \n";
+        return siv;
+      }
+    }
     errs() << "\n";
   }
   errs() << "//end\n";
-
+  return nullptr;
 }
 
 void CFI::handleFunction(Function *func)
@@ -87,20 +103,21 @@ void CFI::handleFunction(Function *func)
         if (!call->isIndirectCall())
           continue;
 
-        findCallee(call);
         LLVMContext &context = inst->getFunction()->getContext();
         IRBuilder<> Builder(inst);
         Type *ty = Type::getInt8PtrTy(context);
         Value *CastedCallee = Builder.CreateBitCast(call->getCalledOperand(), ty);
         Function *func = Intrinsic::getDeclaration(inst->getModule(), Intrinsic::type_test);
-
         Metadata *MD = MDString::get(context, "fnPtr");
         MDNode *N = MDNode::get(context, MD);
-        func->setMetadata("fnptr", N);
+
+        Value *callee = findCallee(call);
+        if (callee)
+          func->setMetadata(callee->getName(), N);
+
         Value *TypeID = MetadataAsValue::get(context, MD);
         Instruction *TypeTest = Builder.CreateCall(func, {CastedCallee, TypeID});
         BasicBlock *TypeTestBB = TypeTest->getParent();
-
         BasicBlock *ContBB = TypeTestBB->splitBasicBlock(TypeTest, "cont");
         BasicBlock *TrapBB = createBasicBlock(context, "trap"); 
         TrapBB->insertInto(inst->getFunction(), ContBB);

@@ -35,13 +35,13 @@ void debugOperands(Instruction *inst, int depth=0)
     }
     if (el->getType()) {
       auto *ty = el->getType();
-      errs() << string(depth+2, SPACE) << ty->getNumContainedTypes();
+      errs() << string(depth+2, SPACE) << "Type number : " << ty->getNumContainedTypes();
       switch(ty->getTypeID()) {
         case Type::FunctionTyID:
           errs() << "FunctionTy";
           break;
         case Type::PointerTyID:
-          errs() << "PointerTy:"<< dyn_cast<PointerType>(ty)->getAddressSpace();
+          errs() << "PointerTy " << dyn_cast<PointerType>(ty)->getAddressSpace();
           break;
         case Type::StructTyID:
           errs() << "StructTy";
