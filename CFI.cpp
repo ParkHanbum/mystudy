@@ -108,14 +108,24 @@ void CFI::handleFunction(Function *func)
         Type *ty = Type::getInt8PtrTy(context);
         Value *CastedCallee = Builder.CreateBitCast(call->getCalledOperand(), ty);
         Function *func = Intrinsic::getDeclaration(inst->getModule(), Intrinsic::type_test);
-        Metadata *MD = MDString::get(context, "fnPtr");
-        MDNode *N = MDNode::get(context, MD);
-
         Value *callee = findCallee(call);
-        if (callee)
-          func->setMetadata(callee->getName(), N);
 
-        Value *TypeID = MetadataAsValue::get(context, MD);
+        SmallVector<Metadata *, 1> mds;
+        IntegerType *I64Ty = Type::getInt64Ty(inst->getParent()->getContext());
+        Metadata *size = ConstantAsMetadata::get(ConstantInt::get(I64Ty, 0));
+        Metadata *name = MDString::get(context, callee->getName());
+        mds.push_back(size);
+        mds.push_back(name);
+        MDNode *node = MDNode::get(context, mds);
+
+	dyn_cast<Function>(callee)->setMetadata("type", node);
+	func->setMetadata(callee->getName(), node);
+
+	Metadata *MD = MDString::get(context, callee->getName());
+	MDNode *N = MDNode::get(context, MD);
+	func->setMetadata(callee->getName(), N);
+	Value *TypeID = MetadataAsValue::get(context, MD);
+
         Instruction *TypeTest = Builder.CreateCall(func, {CastedCallee, TypeID});
         BasicBlock *TypeTestBB = TypeTest->getParent();
         BasicBlock *ContBB = TypeTestBB->splitBasicBlock(TypeTest, "cont");
