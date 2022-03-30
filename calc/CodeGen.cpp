@@ -19,6 +19,7 @@ class ToIRVisitor : public ASTVisitor {
   IntegerType *I32;
 
   Value *V;
+  Instruction *inst;
   BasicBlock *entry;
   Function *MainFn;
   StringMap<Value *> nameMap;
@@ -53,23 +54,25 @@ public:
     int intval;
     Node.getVal().getAsInteger(10, intval);
     V = ConstantInt::get(Int32Ty, intval, true);
-    V->print(errs(), false);
-    Instruction *inst = new AllocaInst(I32, 0, V, "temp", entry);
-    inst->print(errs(), false);
+    inst = Builder.CreateAlloca(Int32Ty, nullptr, "");
+    Builder.CreateStore(V, inst);
   };
 
   virtual void visit(BinaryOp &Node) override {
     errs() << "visit BINOP";
     Node.getLeft()->accept(*this);
     Value *Left = V;
+    Value *l = inst;
     Node.getRight()->accept(*this);
     Value *Right = V;
+    Value *r = inst;
+
     switch (Node.getOperator()) {
     case BinaryOp::Plus:
-      V = Builder.CreateNSWAdd(Left, Right);
+      V = Builder.CreateNSWAdd(Builder.CreateLoad(l), Builder.CreateLoad(r));
       break;
     case BinaryOp::Minus:
-      V = Builder.CreateNSWSub(Left, Right);
+      V = Builder.CreateNSWSub(Builder.CreateLoad(l), Builder.CreateLoad(r));
       break;
     }
 
