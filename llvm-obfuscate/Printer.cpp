@@ -51,7 +51,7 @@ bool Printer::runOnModule(Module &M) {
   for (auto &Func : M) {
     for (auto &BB : Func) {
         errs() << "\n======================== [bb] =========================\n";
-        BB.print(errs(), false);
+        BB.print(errs());
         errs() << "\n======================== [bb] =========================\n";
 
       for (auto &Ins : BB) {

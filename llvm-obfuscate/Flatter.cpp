@@ -11,7 +11,7 @@ int Flatter::getLabel(BasicBlock* bb)
     bb->printAsOperand(OS, false);
   }
   else {
-    Str = bb->getName();
+    Str = bb->getName().str();
   }
 
   Str.erase(std::remove(Str.begin(), Str.end(), '%'), Str.end());
@@ -31,7 +31,7 @@ void Flatter::printOperands(Instruction& inst)
       raw_string_ostream OS(Str);
       el->printAsOperand(OS, false);
     } else {
-      Str = el->getName();
+      Str = el->getName().str();
     }
 
     errs() << "\n\t operand : " << Str << "\t type : "; 
@@ -64,7 +64,7 @@ bool Flatter::handleInst(Instruction& inst)
 void Flatter::printBB(BasicBlock* bb)
 {
   errs() << "\n=================[BasicBlock]======================\n";
-  bb->print(errs(), false);
+  bb->print(errs());
 }
 
 void Flatter::flatting(Function *Func)
@@ -180,7 +180,7 @@ bool Flatter::runOnModule(Module &M) {
 	for (auto &Func : M) {
 		for (auto &BB : Func) {
 			errs() << "\n======================== [bb] =========================\n";
-			BB.print(errs(), false);
+			BB.print(errs());
 			errs() << "\n======================== [bb] =========================\n";
 
 			for (auto &Ins : BB) {

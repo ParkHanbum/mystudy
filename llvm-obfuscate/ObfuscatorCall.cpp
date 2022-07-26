@@ -79,7 +79,7 @@ Constant *CreateGlobalFunctionPtr(Module &M, Function &func) {
   */
 
   std::string name;
-  name.append("TTTT"); name.append(func.getName());
+  name.append("TTTT"); name.append(func.getName().str());
   func.getType()->print(errs(), false);
   GlobalVariable* fnPtr = new GlobalVariable(/*Module=*/M, 
       /*Type=*/ Type::getInt64Ty(func.getContext()),
@@ -146,7 +146,7 @@ bool ObfuscatorCall::runOnModule(Module &M) {
             LoadInst *load = builder.CreateLoad(gFnAddr);
             Value* orig = builder.CreateSub(load, ConstantInt::get(I64, 1));
             Value *tofn = new IntToPtrInst(orig, fn->getType(), "tofncast", &Ins);
-            builder.CreateCall(tofn);
+            builder.CreateCall(fn->getFunctionType(), tofn);
           }
         }
       }
