@@ -3,7 +3,11 @@
 #include <string.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <limits.h>
 #include "aes.h"
+#include "integrity.h"
 
 void print_hexstr(const unsigned char *data, int len)
 {
@@ -84,10 +88,70 @@ void testSHA256()
     printf("SHA256 AVAILIABLE\n");
 }
 
+void testINTEGRITY1()
+{
+    int i;
+    for (i = 0; i < DEFINED_FILE_COUNT; i++) {
+        struct hash_pair curr = hashes[i];
+        print_hex(curr.namehash, SHA256_DIGEST_LENGTH);
+        print_hex(curr.datahash, SHA256_DIGEST_LENGTH);
+    }
+}
+
+void testINTEGRITY2()
+{
+  unsigned char namehash[SHA256_DIGEST_LENGTH] = {0,};
+  unsigned char datahash[SHA256_DIGEST_LENGTH] = {0,};
+  unsigned char path[PATH_MAX];
+  int i;
+  char *buf;
+  FILE *fp;
+  long size;
+
+  DIR *dp;
+  struct dirent *ep;
+  dp = opendir("temp");
+  while ((ep = readdir(dp)) != NULL) {
+    if (ep->d_type == DT_REG) {
+      snprintf(path, PATH_MAX, "temp/%s", ep->d_name);
+      puts(path);
+
+      fp = fopen(path, "r");
+      fseek(fp, 0, SEEK_END);
+      size = ftell(fp);
+      rewind(fp);
+
+      buf = malloc(size);
+      fread(buf, 1, size, fp);
+      fclose(fp);
+
+      SHA256((unsigned char *)&path, strlen(path), (unsigned char *)&namehash);
+      SHA256((unsigned char *)buf, size, (unsigned char *)&datahash);
+      free(buf);
+
+      for (i = 0; i < DEFINED_FILE_COUNT; i++) {
+        struct hash_pair curr = hashes[i];
+        if (memcmp(namehash, curr.namehash, SHA256_DIGEST_LENGTH) == 0) {
+          printf("hash found! : ");
+          if (memcmp(datahash, curr.datahash, SHA256_DIGEST_LENGTH) == 0) {
+            printf("correct!\n");
+          } else {
+            printf("hash tampering : ");
+            print_hex(datahash, SHA256_DIGEST_LENGTH);
+            print_hex(curr.datahash, SHA256_DIGEST_LENGTH);
+          }
+        }
+      }
+    }
+  }
+  closedir(dp);
+}
+
 int main(int argc, char** argv)
 {
   testAES(argv[1]);
   testSHA256();
-
+  testINTEGRITY1();
+  testINTEGRITY2();
   return 0;
 }
