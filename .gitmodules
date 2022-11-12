@@ -1,0 +1,3 @@
+[submodule "integrity/openssl"]
+	path = integrity/openssl
+	url = https://github.com/openssl/openssl.git
