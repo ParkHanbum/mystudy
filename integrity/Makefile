@@ -1,7 +1,7 @@
 ROOT := $(CURDIR)
 
-CXXFLAGS := -Iopenssl -Wl,$(ROOT)/openssl/libcrypto.a,$(ROOT)/openssl/libssl.a
-LDFLAGS := -lpthread -ldl
+override CXXFLAGS += -Iopenssl -Wl,$(ROOT)/openssl/libcrypto.a,$(ROOT)/openssl/libssl.a
+override LDFLAGS += -lpthread -ldl
 
 all: integrity
 
