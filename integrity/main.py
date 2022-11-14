@@ -11,6 +11,9 @@ from elftools.elf.elffile import ELFFile
 # file list
 filelist = []
 
+# bucketcount
+bucketcount = 1
+
 
 def appendRandomData(f: object) -> None:
     """
@@ -40,7 +43,14 @@ def build():
     build
     build executable file named executable using make
     """
-    builder = "make CXXFLAGS=-DDEFINED_FILE_COUNT={:d}".format(len(filelist))
+    global bucketcount
+    # calc bucket count
+    filecount = len(filelist)
+    # bucket count must be power of 2
+    while bucketcount < filecount:
+        bucketcount <<= 1
+
+    builder = "make CXXFLAGS='-DDEFINED_FILE_COUNT={:d} -DBUCKET_COUNT={:d}'".format(len(filelist), bucketcount)
     print(builder)
     subprocess.call(builder, shell=True)
     time.sleep(1)
@@ -56,9 +66,12 @@ def doHashes():
     f = open("integrity", "rb+")
     elf = ELFFile(f)
     pos = 0
+    idx_pos = 0
     for section in elf.iter_sections():
         if section.name == "myhashes":
             pos = section['sh_offset']
+        if section.name == "myhashes_index":
+            idx_pos = section['sh_offset']
 
     hash_pair = []
     for path in filelist:
@@ -83,7 +96,7 @@ def doHashes():
 
     # sort is required for use like hashmap
     hash_pair = sorted(hash_pair)
-    for el in hash_pair:
+    for idx, el in enumerate(hash_pair):
         name_hash = el[0]
         data_hash = el[1]
         path = el[2]
@@ -94,11 +107,56 @@ def doHashes():
         f.write(bytes.fromhex(data_hash))
         pos += 32
 
+        log.write(str(idx) + "]")
         log.write(path)
         log.write('\t')
         log.write(name_hash)
         log.write('\t')
         log.write(data_hash)
+        log.write('\n')
+
+    # hash index generate
+    hashbit = len(bin(bucketcount - 1)[2:])
+    hashbook = {}
+    pos = 0
+    for idx, el in enumerate(hash_pair):
+        name_hash = el[0]
+        data_hash = el[1]
+        path = el[2]
+
+        # calculate hash index
+        v = int(name_hash, 16)
+        # key index
+        key_idx = v >> (256 - hashbit)
+        if key_idx in hashbook:
+            el = hashbook[key_idx]
+            el["count"] = el["count"] + 1
+        else:
+            hashbook[key_idx] = {"hash_idx":idx, "count": 1}
+
+        log.write(path)
+        log.write('\t')
+        log.write(str(key_idx))
+        log.write('\t')
+        log.write(name_hash)
+        log.write('\n')
+
+    for key_idx, item in hashbook.items():
+        # since it has sorted it before, this work can sequentially
+        pos = idx_pos + (8 * key_idx)
+        f.seek(pos, 0)
+        f.write((item["hash_idx"]).to_bytes(4, byteorder="little"))
+        pos = pos + 4
+        f.seek(pos, 0)
+        f.write((item["count"]).to_bytes(4, byteorder="little"))
+
+        log.write(str(key_idx))
+        log.write('\t')
+        log.write(str(item["hash_idx"]))
+        log.write('\t')
+        log.write(str(item["count"]))
+        log.write('\t')
+        log.write(hash_pair[item["hash_idx"]][0])
         log.write('\n')
 
     f.close()

@@ -147,11 +147,93 @@ void testINTEGRITY2()
   closedir(dp);
 }
 
+void testINTEGRITY3()
+{
+    int i;
+
+    for (i = 0; i < BUCKET_COUNT; i++) {
+        int hash_idx = ind[i].hash_idx;
+        int count = ind[i].count;
+        if (count == 0) continue;
+        printf("%d : %d %d\n", i, hash_idx, count);
+        print_hex(hashes[hash_idx].namehash, SHA256_DIGEST_LENGTH);
+        print_hex(hashes[hash_idx].datahash, SHA256_DIGEST_LENGTH);
+    }
+}
+
+void testINTEGRITY4()
+{
+  uint8_t namehash[SHA256_DIGEST_LENGTH] = {0,};
+  uint8_t datahash[SHA256_DIGEST_LENGTH] = {0,};
+  unsigned char path[PATH_MAX];
+  int i;
+  char *buf;
+  FILE *fp;
+  long size;
+
+  int count = BUCKET_COUNT - 1;
+  int hashbit = 0;
+  while (count > 0) {
+    count >>= 1;
+    hashbit++;
+  }
+
+  DIR *dp;
+  struct dirent *ep;
+  dp = opendir("temp");
+  while ((ep = readdir(dp)) != NULL) {
+    if (ep->d_type == DT_REG) {
+      snprintf(path, PATH_MAX, "temp/%s", ep->d_name);
+      puts(path);
+
+      fp = fopen(path, "r");
+      fseek(fp, 0, SEEK_END);
+      size = ftell(fp);
+      rewind(fp);
+
+      buf = malloc(size);
+      fread(buf, 1, size, fp);
+      fclose(fp);
+
+      SHA256((unsigned char *)&path, strlen(path), (unsigned char *)&namehash);
+      SHA256((unsigned char *)buf, size, (unsigned char *)&datahash);
+      free(buf);
+
+      // calculate index
+      uint32_t key_idx = namehash[0] << 24;
+      key_idx += namehash[1] << 16;
+      key_idx += namehash[2] << 8;
+      key_idx += namehash[3];
+      key_idx = key_idx >> (32 - hashbit);
+      struct index idx = ind[key_idx];
+      printf("%d] hash index -> %d, count -> %d \n", key_idx, idx.hash_idx, idx.count);
+
+      // searching data
+      for (i = 0; i < idx.count; i++) {
+        struct hash_pair p = hashes[idx.hash_idx + i];
+        if (memcmp(p.namehash, namehash, SHA256_DIGEST_LENGTH) == 0) {
+          if (memcmp(p.namehash, namehash, SHA256_DIGEST_LENGTH) == 0) {
+            printf("correct!\n");
+            break;
+          } else {
+            printf("data mismatched!\n");
+          }
+        } else {
+          printf("key mismatched!\n");
+        }
+      }
+    }
+  }
+  closedir(dp);
+}
+
 int main(int argc, char** argv)
 {
   testAES(argv[1]);
   testSHA256();
   testINTEGRITY1();
   testINTEGRITY2();
+  testINTEGRITY3();
+  testINTEGRITY4();
   return 0;
 }
