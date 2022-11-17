@@ -5,6 +5,7 @@ import random
 import subprocess
 import time
 import binascii
+import sys
 from elftools.elf.elffile import ELFFile
 
 
@@ -13,6 +14,12 @@ filelist = []
 
 # bucketcount
 bucketcount = 1
+
+# FILE
+file_amount = 32
+
+# BUILD
+build_type = "bench"
 
 
 def appendRandomData(f: object) -> None:
@@ -31,7 +38,7 @@ def createFiles():
     from pathlib import Path
     Path("temp").mkdir(parents=True, exist_ok=True)
     fname = os.path.join("temp", "temporary-{:d}")
-    for i in range(32):
+    for i in range(file_amount):
         fn = fname.format(i)
         filelist.append(fn)
         f = open(fn, 'wb')
@@ -46,13 +53,20 @@ def build():
     global bucketcount
     # calc bucket count
     filecount = len(filelist)
+    opts = []
     # bucket count must be power of 2
     while bucketcount < filecount:
         bucketcount <<= 1
 
-    builder = "make CXXFLAGS='-DDEFINED_FILE_COUNT={:d} -DBUCKET_COUNT={:d}'".format(len(filelist), bucketcount)
-    print(builder)
-    subprocess.call(builder, shell=True)
+    build_script = "make"
+    build_script = build_script + " " + build_type
+
+    opts.append("-DDEFINED_FILE_COUNT={:d}".format(filecount))
+    opts.append("-DBUCKET_COUNT={:d}".format(bucketcount))
+    print(opts)
+    build_script = build_script + " CXXFLAGS='{}'".format(' '.join(opts))
+    print(build_script)
+    subprocess.call(build_script, shell=True)
     time.sleep(1)
 
 
@@ -163,6 +177,11 @@ def doHashes():
 
 
 if __name__ == "__main__":
+    print("USAGE : python main.py [file amount] [bench|integrity]")
+    file_amount = int(sys.argv[1], 10)
+    if len(sys.argv) > 2:
+        build_type = sys.argv[2]
+
     createFiles()
     build()
     doHashes()

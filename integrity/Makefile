@@ -5,8 +5,11 @@ override LDFLAGS += -lpthread -ldl
 
 all: integrity
 
+bench: main.c aes.c
+	gcc $^ $(CXXFLAGS) -g -pg -DBENCH -o integrity $(LDFLAGS)
+
 integrity: main.c aes.c
-	clang $^ $(CXXFLAGS) -o $@ $(LDFLAGS)
+	gcc $^ $(CXXFLAGS) -o integrity $(LDFLAGS)
 
 clean:
 	rm integrity

@@ -235,12 +235,86 @@ void testINTEGRITY4() {
   closedir(dp);
 }
 
+void INTEGRITY_ARRAY(unsigned char *namehash, unsigned char *datahash) {
+  int i;
+  for (i = 0; i < DEFINED_FILE_COUNT; i++) {
+    struct hash_pair curr = hashes[i];
+    if (memcmp(namehash, curr.namehash, SHA256_DIGEST_LENGTH) == 0) {
+      if (memcmp(datahash, curr.datahash, SHA256_DIGEST_LENGTH) == 0)
+        return;
+    }
+  }
+}
+
+void INTEGRITY_HASHWAY(unsigned char *namehash, unsigned char *datahash, int hashbit) {
+  int i;
+  // calculate index
+  uint32_t key_idx = namehash[0] << 24;
+  key_idx += namehash[1] << 16;
+  key_idx += namehash[2] << 8;
+  key_idx += namehash[3];
+  key_idx = key_idx >> (32 - hashbit);
+  struct index idx = ind[key_idx];
+
+  // searching data
+  for (i = 0; i < idx.count; i++) {
+    struct hash_pair p = hashes[idx.hash_idx + i];
+    if (memcmp(p.namehash, namehash, SHA256_DIGEST_LENGTH) == 0) {
+      if (memcmp(p.namehash, namehash, SHA256_DIGEST_LENGTH) == 0)
+        return;
+    }
+  }
+}
+
+void INTEGRITY_BENCH() {
+  unsigned char namehash[SHA256_DIGEST_LENGTH] = { 0, };
+  unsigned char datahash[SHA256_DIGEST_LENGTH] = { 0, };
+  unsigned char path[PATH_MAX];
+  int i;
+  char *buf;
+  FILE *fp;
+  long size;
+  DIR *dp;
+  struct dirent *ep;
+  int count = BUCKET_COUNT - 1;
+  int hashbit = 0;
+  while (count > 0) {
+    count >>= 1;
+    hashbit++;
+  }
+
+  dp = opendir("temp");
+  while ((ep = readdir(dp)) != NULL) {
+    if (ep->d_type == DT_REG) {
+      snprintf(path, PATH_MAX, "temp/%s", ep->d_name);
+      fp = fopen(path, "r");
+      fseek(fp, 0, SEEK_END);
+      size = ftell(fp);
+      rewind(fp);
+      buf = malloc(size);
+      fread(buf, 1, size, fp);
+      fclose(fp);
+      SHA256((unsigned char *)&path, strlen(path), (unsigned char *)&namehash);
+      SHA256((unsigned char *)buf, size, (unsigned char *)&datahash);
+      free(buf);
+
+      INTEGRITY_ARRAY(namehash, datahash);
+      INTEGRITY_HASHWAY(namehash, datahash, hashbit);
+    }
+  }
+  closedir(dp);
+}
+
 int main(int argc, char **argv) {
+#if !defined(BENCH)
   testAES(argv[1]);
   testSHA256();
   testINTEGRITY1();
   testINTEGRITY2();
   testINTEGRITY3();
   testINTEGRITY4();
+#else
+  INTEGRITY_BENCH();
+#endif
   return 0;
 }
