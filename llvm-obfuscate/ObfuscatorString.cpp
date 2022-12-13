@@ -44,7 +44,7 @@ namespace {
                 Builder.CreateCall(DecodeFunc, {StrPtr});
             }
             else if(GlobString->type == GlobString->STRUCT_STRING_TYPE){
-                auto *String = Builder.CreateStructGEP(GlobString->Glob, GlobString->index);
+                auto *String = Builder.CreateStructGEP(Type::getInt8PtrTy(Ctx, 8), GlobString->Glob, GlobString->index);
                 auto *StrPtr = Builder.CreatePointerCast(String, Type::getInt8PtrTy(Ctx, 8));
                 Builder.CreateCall(DecodeFunc, {StrPtr});
             }
@@ -76,19 +76,21 @@ namespace {
 
         // Entry block
         IRBuilder<> *Builder = new IRBuilder<>(BEntry);
-        auto *var0 = Builder->CreateLoad(StrPtr, "var0");
-        auto *cmp5 = Builder->CreateICmpEQ(var0, Constant::getNullValue(Type::getInt8Ty(Ctx)), "cmp5");
+        auto *var0 = Builder->CreateLoad(StrPtr->getType(), StrPtr, "var0");
+        auto *con1 = Constant::getNullValue(StrPtr->getType());
+        auto *cmp5 = Builder->CreateICmpEQ(var0, con1, "cmp5");
         Builder->CreateCondBr(cmp5, BWhileEnd, BWhileBody);
 
         // Preheader block
         Builder = new IRBuilder<>(BWhileBody);
-        PHINode *var1 = Builder->CreatePHI(Type::getInt8Ty(Ctx), 2, "var1");
+        PHINode *var1 = Builder->CreatePHI(Type::getInt8PtrTy(Ctx, 8), 2, "var1");
         PHINode *stringaddr07 = Builder->CreatePHI(Type::getInt8PtrTy(Ctx, 8), 2, "stringaddr07");
         auto *sub = Builder->CreateSub(var1, ConstantInt::get(IntegerType::get(Ctx, 8), 1, true));
         Builder->CreateStore(sub, stringaddr07);
-        auto *incdecptr = Builder->CreateGEP(stringaddr07, ConstantInt::get(IntegerType::get(Ctx, 64), 1), "incdecptr");
-        auto *var2 = Builder->CreateLoad(incdecptr, "var2");
-        auto cmp = Builder->CreateICmpEQ(var2, ConstantInt::get(IntegerType::get(Ctx, 8), 0), "cmp");
+        auto *incdecptr = Builder->CreateGEP(stringaddr07->getType(), stringaddr07, ConstantInt::get(IntegerType::get(Ctx, 64), 1), "incdecptr");
+        auto *var2 = Builder->CreateLoad(Type::getInt8PtrTy(Ctx, 8), incdecptr, "var2");
+        auto *con2 = Constant::getNullValue(var2->getType());
+        auto cmp = Builder->CreateICmpEQ(var2, con2, "cmp");
         Builder->CreateCondBr(cmp, BWhileEnd, BWhileBody);
 
         // End block

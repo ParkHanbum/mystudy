@@ -1,4 +1,5 @@
-LLVM_CONFIG?=llvm-config
+LLVM_CONFIG := llvm-config
+CXX := clang
 
 ifndef VERBOSE
 QUIET:=@
@@ -49,17 +50,16 @@ EXAMPLE_SRCS 	:= $(ifstate).c $(switch).c $(while).c $(call).c
 CALL-EX-BC += $(call).bc
 FLATTER-PASS-BC := $(ifstate).bc
 
-CXX := clang++
 
 default: $(CALL-PASS-SO) $(STRING-PASS-SO) $(PRINTER-PASS-SO) $(FLATTER-PASS-SO)
 
 %.op : $(SRC_DIR)/%.cpp
 	@echo 2. GEN $@ by Compiling $*.cpp
-	$(CXX) -g -pg -o $@ -c $(CPPFLAGS) $(CXXFLAGS) $<
+	$(CXX) -o $@ -c $(CPPFLAGS) $(CXXFLAGS) $<
 
 %.bc : $(SRC_DIR)/%.c
 	@echo 2. GEN $@ by Compiling $*.c
-	clang -emit-llvm -o $@ -c $<
+	$(CXX) -emit-llvm -o $@ -c $<
 
 $(STRING-PASS-SO) : $(STRING-PASS-OBJS)
 	@echo 3. Linking $@ with LLVM libraries
@@ -100,4 +100,5 @@ clean::
 	$(QUIET)rm -f $(STRING-PASS-OBJS) $(STRING-PASS-SO)
 	$(QUIET)rm -f $(CALL-PASS-OBJS) $(CALL-PASS-SO)
 	$(QUIET)rm -f $(PRINTER-PASS-OBJS) $(PRINTER-PASS-SO)
+	$(QUIET)rm -f $(FLATTER-PASS-OBJS) $(FLATTER-PASS-SO)
 	$(QUIET)rm -f *.ll *.bc *.bin

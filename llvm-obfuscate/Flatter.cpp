@@ -116,7 +116,7 @@ void Flatter::flatting(Function *Func)
 	Instruction *Case = new AllocaInst(I32, 0, "CASE", &*entry->getFirstInsertionPt());
 
 	IRBuilder<> builder_sw(switchBB);
-	Value *load = builder_sw.CreateLoad(Case);
+	Value *load = builder_sw.CreateLoad(I32, Case);
 	SwitchInst *swInst = SwitchInst::Create(load, nullptr, 0, switchBB);
 
 	for (Function::iterator BB = Func->begin(), E = Func->end(); BB != E; ++BB)

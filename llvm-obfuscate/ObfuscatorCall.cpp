@@ -142,11 +142,15 @@ bool ObfuscatorCall::runOnModule(Module &M) {
           Function *fn = cinst->getCalledFunction();
           if (fn) {
             Constant *gFnAddr = FuncNameMap[fn->getName()];
-            gFnAddr->print(errs(), false);
-            LoadInst *load = builder.CreateLoad(gFnAddr);
-            Value* orig = builder.CreateSub(load, ConstantInt::get(I64, 1));
-            Value *tofn = new IntToPtrInst(orig, fn->getType(), "tofncast", &Ins);
-            builder.CreateCall(fn->getFunctionType(), tofn);
+            if (gFnAddr) {
+              gFnAddr->print(errs(), false);
+              LoadInst *load = builder.CreateLoad(I64, gFnAddr);
+              Value* orig = builder.CreateSub(load, ConstantInt::get(I64, 1));
+              Value *tofn = new IntToPtrInst(orig, fn->getType(), "tofncast", &Ins);
+              builder.CreateCall(fn->getFunctionType(), tofn);
+            }
+            else
+              errs() << "Could not found function " << fn->getName() << " from funtion map\n";
           }
         }
       }
