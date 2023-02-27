@@ -81,6 +81,12 @@ using namespace llvm::PatternMatch;
 
 #define DEBUG_TYPE "loop-flatten"
 
+#define LLVM_DEBUG(X)                                                               \
+  do {                                                                              \
+    dbgs() << "[" << DEBUG_TYPE << "]" << __FUNCTION__ << ":" << __LINE__ << "\t"; \
+    X;                                                                              \
+  } while (false)
+
 STATISTIC(NumFlattened, "Number of loops flattened");
 
 static cl::opt<unsigned> RepeatedInstructionThreshold(
@@ -355,6 +361,30 @@ static bool findLoopComponents(
     BranchInst *&BackBranch, ScalarEvolution *SE, bool IsWidened) {
   LLVM_DEBUG(dbgs() << "Finding components of loop: " << L->getName() << "\n");
 
+  BasicBlock* bb; 
+  /*
+    isLoopSimplifyForm() checks three conditions.
+    1. Loop must has PreHeader
+    2. Loop must has LoopLatch
+    3. Loop must has Dedicated Exits  
+  */ 
+  bb = L->getLoopPreheader();
+  LLVM_DEBUG(dbgs() << "getLoopPreheader : "); bb->dump();
+
+  bb = L->getLoopLatch();
+  LLVM_DEBUG(dbgs() << "getLoopLatch : "; bb->dump());
+
+  // Each predecessor of each exit block of a normal loop is contained
+  // within the loop.
+  LLVM_DEBUG(dbgs() << "hasDedicatedExits : ");
+  SmallVector<BasicBlock *, 4> UniqueExitBlocks;
+  L->getUniqueExitBlocks(UniqueExitBlocks);
+  for (BasicBlock *EB : UniqueExitBlocks)
+    for (BasicBlock *Predecessor : children<Inverse<BasicBlock *>>(EB)) {
+      if (!L->contains(Predecessor))
+        LLVM_DEBUG(dbgs() << "Hasn't DecatedExit!!"; Predecessor->dump());
+    }
+
   if (!L->isLoopSimplifyForm()) {
     LLVM_DEBUG(dbgs() << "Loop is not in normal form\n");
     return false;
@@ -371,16 +401,21 @@ static bool findLoopComponents(
   // latch.
   BasicBlock *Latch = L->getLoopLatch();
   if (L->getExitingBlock() != Latch) {
-    LLVM_DEBUG(dbgs() << "Exiting and latch block are different\n");
+    LLVM_DEBUG(dbgs() << "Exiting and latch block are different";
+               L->getExitingBlock()->dump(); Latch->dump());
     return false;
   }
+
+  LLVM_DEBUG(dbgs() << "LATCH : "; Latch->dump());
+  bb = L->getExitingBlock();
+  LLVM_DEBUG(dbgs() << "ExitingBlock : "; bb->dump());
 
   // Find the induction PHI. If there is no induction PHI, we can't do the
   // transformation. TODO: could other variables trigger this? Do we have to
   // search for the best one?
   InductionPHI = L->getInductionVariable(*SE);
   if (!InductionPHI) {
-    LLVM_DEBUG(dbgs() << "Could not find induction PHI\n");
+    LLVM_DEBUG(dbgs() << "Could not find induction PHI");
     return false;
   }
   LLVM_DEBUG(dbgs() << "Found induction PHI: "; InductionPHI->dump());
@@ -398,9 +433,13 @@ static bool findLoopComponents(
   ICmpInst *Compare = L->getLatchCmpInst();
   if (!Compare || !IsValidPredicate(Compare->getUnsignedPredicate()) ||
       Compare->hasNUsesOrMore(2)) {
-    LLVM_DEBUG(dbgs() << "Could not find valid comparison\n");
+    LLVM_DEBUG(dbgs() << "Could not find valid comparison"
+                      << Compare->getPredicateName(Compare->getUnsignedPredicate());
+               Compare->dump(););
     return false;
   }
+  LLVM_DEBUG(dbgs() << "Compare : "; Compare->dump());
+
   BackBranch = cast<BranchInst>(Latch->getTerminator());
   IterationInstructions.insert(BackBranch);
   LLVM_DEBUG(dbgs() << "Found back branch: "; BackBranch->dump());
@@ -414,15 +453,18 @@ static bool findLoopComponents(
   Increment =
       cast<BinaryOperator>(InductionPHI->getIncomingValueForBlock(Latch));
   if (Increment->hasNUsesOrMore(3)) {
-    LLVM_DEBUG(dbgs() << "Could not find valid increment\n");
+    LLVM_DEBUG(dbgs() << "Increment->hasNUsesOrMore over 3");
     return false;
   }
+  LLVM_DEBUG(dbgs() << "Increment : "; Increment->dump());
+
   // The trip count is the RHS of the compare. If this doesn't match the trip
   // count computed by SCEV then this is because the trip count variable
   // has been widened so the types don't match, or because it is a constant and
   // another transformation has changed the compare (e.g. icmp ult %inc,
   // tripcount -> icmp ult %j, tripcount-1), or both.
   Value *RHS = Compare->getOperand(1);
+  LLVM_DEBUG(dbgs() << "RHS : "; RHS->dump());
 
   return verifyTripCount(RHS, L, IterationInstructions, InductionPHI, TripCount,
                          Increment, BackBranch, SE, IsWidened);
@@ -469,7 +511,10 @@ static bool checkPHIs(FlattenInfo &FI, const TargetTransformInfo *TTI) {
     // loop.
     PHINode *OuterPHI = dyn_cast<PHINode>(PreHeaderValue);
     if (!OuterPHI || OuterPHI->getParent() != FI.OuterLoop->getHeader()) {
-      LLVM_DEBUG(dbgs() << "value modified in top of outer loop\n");
+      LLVM_DEBUG(dbgs() << "value modified in top of outer loop";
+                 OuterPHI->dump();
+                 OuterPHI->getParent()->dump();
+                 FI.OuterLoop->getHeader()->dump());
       return false;
     }
 
@@ -480,7 +525,8 @@ static bool checkPHIs(FlattenInfo &FI, const TargetTransformInfo *TTI) {
     PHINode *LCSSAPHI = dyn_cast<PHINode>(
         OuterPHI->getIncomingValueForBlock(FI.OuterLoop->getLoopLatch()));
     if (!LCSSAPHI) {
-      LLVM_DEBUG(dbgs() << "could not find LCSSA PHI\n");
+      LLVM_DEBUG(dbgs() << "could not find LCSSA PHI : ";
+                 LCSSAPHI->dump());
       return false;
     }
 
@@ -488,11 +534,12 @@ static bool checkPHIs(FlattenInfo &FI, const TargetTransformInfo *TTI) {
     // loop's PHI uses.
     if (LCSSAPHI->hasConstantValue() != LatchValue) {
       LLVM_DEBUG(
-          dbgs() << "LCSSA PHI incoming value does not match latch value\n");
+          dbgs() << "LCSSA PHI incoming value does not match latch value";
+          LCSSAPHI->hasConstantValue()->dump());
       return false;
     }
 
-    LLVM_DEBUG(dbgs() << "PHI pair is safe:\n");
+    LLVM_DEBUG(dbgs() << "PHI pair is safe");
     LLVM_DEBUG(dbgs() << "  Inner: "; InnerPHI.dump());
     LLVM_DEBUG(dbgs() << "  Outer: "; OuterPHI->dump());
     SafeOuterPHIs.insert(OuterPHI);
@@ -722,22 +769,32 @@ static bool DoFlattenLoopPair(FlattenInfo &FI, DominatorTree *DT, LoopInfo *LI,
 
   // Fix up PHI nodes that take values from the inner loop back-edge, which
   // we are about to remove.
+  LLVM_DEBUG(dbgs() << "Remove Incoming Value: "; FI.InnerLoop->getLoopLatch()->dump());
+  LLVM_DEBUG(dbgs() << "from : "; FI.InnerInductionPHI->dump());
   FI.InnerInductionPHI->removeIncomingValue(FI.InnerLoop->getLoopLatch());
+  LLVM_DEBUG(dbgs() << "removed : "; FI.InnerInductionPHI->dump());
 
   // The old Phi will be optimised away later, but for now we can't leave
   // leave it in an invalid state, so are updating them too.
-  for (PHINode *PHI : FI.InnerPHIsToTransform)
+  for (PHINode *PHI : FI.InnerPHIsToTransform) {
+    LLVM_DEBUG(dbgs() << "from PHI : "; PHI->dump());
     PHI->removeIncomingValue(FI.InnerLoop->getLoopLatch());
+  }
 
   // Modify the trip count of the outer loop to be the product of the two
   // trip counts.
+  LLVM_DEBUG(dbgs() << "OutterBranch Condition change from: "; FI.OuterBranch->getCondition()->dump());
   cast<User>(FI.OuterBranch->getCondition())->setOperand(1, NewTripCount);
+  LLVM_DEBUG(dbgs() << "OutterBranch Condition chnage to : "; FI.OuterBranch->getCondition()->dump());
 
   // Replace the inner loop backedge with an unconditional branch to the exit.
   BasicBlock *InnerExitBlock = FI.InnerLoop->getExitBlock();
   BasicBlock *InnerExitingBlock = FI.InnerLoop->getExitingBlock();
+  LLVM_DEBUG(dbgs() << "erase InnerExitingBlock : "; InnerExitingBlock->dump());
+  LLVM_DEBUG(dbgs() << "erase InnerExitingBlock from : "; InnerExitingBlock->getTerminator()->dump());
   InnerExitingBlock->getTerminator()->eraseFromParent();
-  BranchInst::Create(InnerExitBlock, InnerExitingBlock);
+  auto *br = BranchInst::Create(InnerExitBlock, InnerExitingBlock);
+  LLVM_DEBUG(dbgs() << "create new Branch between InnerExitBlock & InnerExitingBlock"; br->dump());
 
   // Update the DomTree and MemorySSA.
   DT->deleteEdge(InnerExitingBlock, FI.InnerLoop->getHeader());
@@ -747,6 +804,7 @@ static bool DoFlattenLoopPair(FlattenInfo &FI, DominatorTree *DT, LoopInfo *LI,
   // Replace all uses of the polynomial calculated from the two induction
   // variables with the one new one.
   IRBuilder<> Builder(FI.OuterInductionPHI->getParent()->getTerminator());
+
   for (Value *V : FI.LinearIVUses) {
     Value *OuterValue = FI.OuterInductionPHI;
     if (FI.Widened)
