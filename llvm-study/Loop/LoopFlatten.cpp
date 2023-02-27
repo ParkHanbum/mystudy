@@ -960,13 +960,16 @@ public:
 };
 } // namespace
 
+
+static RegisterPass<LoopFlattenLegacyPass> X("loop-flatten-study", "Loop Flatten Pass");
+
 char LoopFlattenLegacyPass::ID = 0;
-INITIALIZE_PASS_BEGIN(LoopFlattenLegacyPass, "loop-flatten", "Flattens loops",
+INITIALIZE_PASS_BEGIN(LoopFlattenLegacyPass, "loop-flatten-study", "Flattens loops",
                       false, false)
 INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(AssumptionCacheTracker)
 INITIALIZE_PASS_DEPENDENCY(LoopPass)
-INITIALIZE_PASS_END(LoopFlattenLegacyPass, "loop-flattenc", "Flattens loops",
+INITIALIZE_PASS_END(LoopFlattenLegacyPass, "loop-flattenc-study", "Flattens loops",
                     false, false)
 
 FunctionPass *llvm::createLoopFlattenPass() {

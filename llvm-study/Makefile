@@ -42,7 +42,7 @@ $(FLATTEN).bc: $(srcdir)/Loop/loop-flatten-test1.ll
 	llvm-as $< -o $(FLATTEN).bc
 
 run: $(FLATTEN).so $(FLATTEN).bc
-	opt -enable-new-pm=0 -load $(objdir)/$(FLATTEN).so --$(FLATTEN) $(FLATTEN).bc > $(FLATTEN)-passed.bin
+	opt -enable-new-pm=0 -load $(objdir)/$(FLATTEN).so --$(FLATTEN)-study $(FLATTEN).bc -o $(FLATTEN)-passed.bin
 	llvm-dis $(FLATTEN)-passed.bin
 	@echo generated .ll file which passed flatten pass.
 	@echo see $(FLATTEN)-passed.bin.ll
