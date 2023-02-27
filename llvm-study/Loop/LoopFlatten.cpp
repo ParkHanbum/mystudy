@@ -891,6 +891,7 @@ static bool FlattenLoopPair(FlattenInfo &FI, DominatorTree *DT, LoopInfo *LI,
   return DoFlattenLoopPair(FI, DT, LI, SE, AC, TTI, U, MSSAU);
 }
 
+static
 bool Flatten(LoopNest &LN, DominatorTree *DT, LoopInfo *LI, ScalarEvolution *SE,
              AssumptionCache *AC, TargetTransformInfo *TTI, LPMUpdater *U,
              MemorySSAUpdater *MSSAU) {
