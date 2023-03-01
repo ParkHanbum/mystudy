@@ -18,6 +18,7 @@ SRC_DIR ?= $(PWD)
 LDFLAGS += $(shell $(LLVM_CONFIG) --ldflags)
 LLVM_CXXFLAGS := $(shell $(LLVM_CONFIG) --cxxflags)
 LLVM_LDFLAGS  := $(shell $(LLVM_CONFIG) --ldflags)
+LLVM_BLDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs)
 
 LOOP_SRCS := $(wildcard $(srcdir)/Loop/*.cpp)
 LOOP_OBJS := $(patsubst $(srcdir)/%.cpp,$(objdir)/%.o,$(LOOP_SRCS))
@@ -29,9 +30,20 @@ FLATTEN 	:= $(LOOP)flatten
 FLATTEN_SRC	:= $(srcdir)/Loop/LoopFlatten.cpp
 FLATTEN_OBJ	:= $(srcdir)/Loop/LoopFlatten.op
 
+# study
+LOOP_STUDY	:= $(LOOP)study
+LOOP_STUDY_SRC	:= $(srcdir)/$(LOOP_STUDY).cpp
+LOOP_STUDY_OBJ	:= $(srcdir)/$(LOOP_STUDY).op
 
 
-default: $(FLATTEN).so
+default: $(FLATTEN).so $(LOOP_STUDY)
+
+$(LOOP_STUDY_OBJ): $(LOOP_STUDY_SRC)
+	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
+
+$(LOOP_STUDY): $(LOOP_STUDY_OBJ)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+
 $(FLATTEN_OBJ): $(FLATTEN_SRC)
 	$(CXX) -o $@ $< -fPIC -c -Wall $(LLVM_CXXFLAGS)
 
@@ -49,4 +61,5 @@ run: $(FLATTEN).so $(FLATTEN).bc
 
 clean::
 	$(QUIET)rm -f *.ll *.bin *.bc *.so
+	$(QUIET)rm -f $(LOOP_STUDY) $(LOOP_STUDY_OBJ)
 	$(QUIET)rm -f $(FLATTEN_OBJ)
