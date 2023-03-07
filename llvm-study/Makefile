@@ -29,6 +29,9 @@ LOOP		:= loop-
 FLATTEN 	:= $(LOOP)flatten
 FLATTEN_SRC	:= $(srcdir)/Loop/LoopFlatten.cpp
 FLATTEN_OBJ	:= $(srcdir)/Loop/LoopFlatten.op
+SIMPLIFY		:= $(LOOP)simplify
+SIMPLIFY_SRC	:= $(srcdir)/Loop/LoopInstSimplify.cpp
+SIMPLIFY_OBJ	:= $(srcdir)/Loop/LoopInstSimplify.op
 
 # study
 LOOP_STUDY	:= $(LOOP)study
@@ -36,7 +39,7 @@ LOOP_STUDY_SRC	:= $(srcdir)/$(LOOP_STUDY).cpp
 LOOP_STUDY_OBJ	:= $(srcdir)/$(LOOP_STUDY).op
 
 
-default: $(FLATTEN).so $(LOOP_STUDY)
+default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY)
 
 $(LOOP_STUDY_OBJ): $(LOOP_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
@@ -50,16 +53,32 @@ $(FLATTEN_OBJ): $(FLATTEN_SRC)
 $(FLATTEN).so: $(FLATTEN_OBJ)
 	$(CXX) -o $@ $< -shared -Wl,-O1 $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS)
 
-$(FLATTEN).bc: $(srcdir)/Loop/loop-flatten-test1.ll
-	llvm-as $< -o $(FLATTEN).bc
+$(SIMPLIFY_OBJ): $(SIMPLIFY_SRC)
+	$(CXX) -o $@ $< -fPIC -c -Wall $(LLVM_CXXFLAGS)
 
-run: $(FLATTEN).so $(FLATTEN).bc
+$(SIMPLIFY).so: $(SIMPLIFY_OBJ)
+	$(CXX) -o $@ $< -shared -Wl,-O1 $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS)
+
+$(SIMPLIFY).bc: $(srcdir)/Loop/loop-simplify1.ll
+	llvm-as $< -o $@
+
+$(FLATTEN).bc: $(srcdir)/Loop/loop-flatten-test1.ll
+	llvm-as $< -o $@
+
+run: $(FLATTEN).so $(FLATTEN).bc $(SIMPLIFY).so $(SIMPLIFY).bc
 	opt -enable-new-pm=0 -load $(objdir)/$(FLATTEN).so --$(FLATTEN)-study $(FLATTEN).bc -o $(FLATTEN)-passed.bin
 	llvm-dis $(FLATTEN)-passed.bin
 	@echo generated .ll file which passed flatten pass.
 	@echo see $(FLATTEN)-passed.bin.ll
 
+	opt -enable-new-pm=0 -load $(objdir)/$(SIMPLIFY).so --loop-instsimplify-study $(SIMPLIFY).bc -o $(SIMPLIFY)-passed.bin
+	llvm-dis $(SIMPLIFY)-passed.bin
+	@echo generated .ll file which passed SIMPLIFY pass.
+	@echo see $(SIMPLIFY)-passed.bin.ll
+
+
 clean::
 	$(QUIET)rm -f *.ll *.bin *.bc *.so
 	$(QUIET)rm -f $(LOOP_STUDY) $(LOOP_STUDY_OBJ)
 	$(QUIET)rm -f $(FLATTEN_OBJ)
+	$(QUIET)rm -f $(SIMPLIFY_OBJ)
