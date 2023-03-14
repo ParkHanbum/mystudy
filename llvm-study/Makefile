@@ -33,13 +33,23 @@ SIMPLIFY		:= $(LOOP)simplify
 SIMPLIFY_SRC	:= $(srcdir)/Loop/LoopInstSimplify.cpp
 SIMPLIFY_OBJ	:= $(srcdir)/Loop/LoopInstSimplify.op
 
+# Utils
+LOCAL		:= local-
+
 # study
 LOOP_STUDY	:= $(LOOP)study
 LOOP_STUDY_SRC	:= $(srcdir)/$(LOOP_STUDY).cpp
 LOOP_STUDY_OBJ	:= $(srcdir)/$(LOOP_STUDY).op
+LOCAL_STUDY	:= $(LOCAL)study
+LOCAL_STUDY_SRC := $(srcdir)/$(LOCAL_STUDY).cpp
+LOCAL_STUDY_OBJ := $(objdir)/$(LOCAL_STUDY).op
 
+default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY)
+$(LOCAL_STUDY_OBJ): $(LOCAL_STUDY_SRC)
+	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
-default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY)
+$(LOCAL_STUDY): $(LOCAL_STUDY_OBJ)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
 
 $(LOOP_STUDY_OBJ): $(LOOP_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
@@ -79,6 +89,7 @@ run: $(FLATTEN).so $(FLATTEN).bc $(SIMPLIFY).so $(SIMPLIFY).bc
 
 clean::
 	$(QUIET)rm -f *.ll *.bin *.bc *.so
+	$(QUIET)rm -f $(LOCAL_STUDY) $(LOCAL_STUDY_OBJ)
 	$(QUIET)rm -f $(LOOP_STUDY) $(LOOP_STUDY_OBJ)
 	$(QUIET)rm -f $(FLATTEN_OBJ)
 	$(QUIET)rm -f $(SIMPLIFY_OBJ)
