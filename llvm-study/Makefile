@@ -43,8 +43,18 @@ LOOP_STUDY_OBJ	:= $(srcdir)/$(LOOP_STUDY).op
 LOCAL_STUDY	:= $(LOCAL)study
 LOCAL_STUDY_SRC := $(srcdir)/$(LOCAL_STUDY).cpp
 LOCAL_STUDY_OBJ := $(objdir)/$(LOCAL_STUDY).op
+SIMPLIFY_STUDY	:= simplify-study
+SIMPLIFY_STUDY_SRC	:= $(srcdir)/$(SIMPLIFY_STUDY).cpp
+SIMPLIFY_STUDY_OBJ	:= $(srcdir)/$(SIMPLIFY_STUDY).op
 
-default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY)
+
+default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
+$(SIMPLIFY_STUDY_OBJ): $(SIMPLIFY_STUDY_SRC)
+	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
+
+$(SIMPLIFY_STUDY): $(SIMPLIFY_STUDY_OBJ)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+
 $(LOCAL_STUDY_OBJ): $(LOCAL_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
@@ -92,4 +102,5 @@ clean::
 	$(QUIET)rm -f $(LOCAL_STUDY) $(LOCAL_STUDY_OBJ)
 	$(QUIET)rm -f $(LOOP_STUDY) $(LOOP_STUDY_OBJ)
 	$(QUIET)rm -f $(FLATTEN_OBJ)
+	$(QUIET)rm -f $(SIMPLIFY_STUDY)
 	$(QUIET)rm -f $(SIMPLIFY_OBJ)

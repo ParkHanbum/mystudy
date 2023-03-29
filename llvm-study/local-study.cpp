@@ -542,6 +542,8 @@ TEST(LOCAL, wouldInstructionBeTriviallyDead1) {
     LLVM_DEBUG(dbgs() << "BB : "; BB->dump());
     for (Instruction &I : *BB) {
       LLVM_DEBUG(dbgs() << "inst : "; I.dump());
+      if (auto *PI = dyn_cast<PHINode>(&I))
+        VisitedPHIs.insert(PI);
       if (_isInstructionTriviallyDead(&I, &TLI))
         LLVM_DEBUG(dbgs() << "Found Dead Instruction : "; I.dump());
       
@@ -552,12 +554,15 @@ TEST(LOCAL, wouldInstructionBeTriviallyDead1) {
       LLVM_DEBUG(dbgs() << "Simplified :"; V->dump());
       for (Use &U : llvm::make_early_inc_range(I.uses())) {
         auto *UserI = cast<Instruction>(U.getUser());
+        LLVM_DEBUG(dbgs() << "User I :"; UserI->dump());
+        LLVM_DEBUG(dbgs() << "Use :"; U->dump());
         U.set(V);
 
         if (!DT.isReachableFromEntry(UserI->getParent()))
           continue;
         if (auto *UserPI = dyn_cast<PHINode>(UserI))
           if (VisitedPHIs.count(UserPI)) {
+            LLVM_DEBUG(dbgs() << "Visited :"; UserPI->dump());
             Next->insert(UserPI);
             continue;
           }
@@ -577,6 +582,8 @@ TEST(LOCAL, wouldInstructionBeTriviallyDead1) {
     }
   }
 }
+
+
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
