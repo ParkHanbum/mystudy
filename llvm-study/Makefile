@@ -29,7 +29,7 @@ LOOP		:= loop-
 FLATTEN 	:= $(LOOP)flatten
 FLATTEN_SRC	:= $(srcdir)/Loop/LoopFlatten.cpp
 FLATTEN_OBJ	:= $(srcdir)/Loop/LoopFlatten.op
-SIMPLIFY		:= $(LOOP)simplify
+SIMPLIFY	:= $(LOOP)simplify
 SIMPLIFY_SRC	:= $(srcdir)/Loop/LoopInstSimplify.cpp
 SIMPLIFY_OBJ	:= $(srcdir)/Loop/LoopInstSimplify.op
 
@@ -43,8 +43,15 @@ LOOP_STUDY_OBJ	:= $(srcdir)/$(LOOP_STUDY).op
 LOCAL_STUDY	:= $(LOCAL)study
 LOCAL_STUDY_SRC := $(srcdir)/$(LOCAL_STUDY).cpp
 LOCAL_STUDY_OBJ := $(objdir)/$(LOCAL_STUDY).op
+SIMPLIFY_STUDY	:= simplify-study
+SIMPLIFY_SRC := $(srcdir)/$(SIMPLIFY_STUDY).cpp
+SIMPLIFY_OBJ := $(objdir)/$(SIMPLIFY_STUDY).op
 
-default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY)
+
+default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
+$(SIMPLIFY_STUDY): $(SIMPLIFY_SRC)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+
 $(LOCAL_STUDY_OBJ): $(LOCAL_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
