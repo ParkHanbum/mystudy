@@ -50,7 +50,7 @@ SIMPLIFY_OBJ := $(objdir)/$(SIMPLIFY_STUDY).op
 
 default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
 $(SIMPLIFY_STUDY): $(SIMPLIFY_SRC)
-	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+	$(CXX) -o $@ $< -g -pg -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
 
 $(LOCAL_STUDY_OBJ): $(LOCAL_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)

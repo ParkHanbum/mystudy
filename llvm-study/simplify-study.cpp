@@ -33,6 +33,30 @@
 #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
 #include "llvm/Transforms/Utils/SimplifyIndVar.h"
 #include "gtest/gtest.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/CaptureTracking.h"
+#include "llvm/Analysis/CmpInstAnalysis.h"
+#include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/InstSimplifyFolder.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/OverflowInstAnalysis.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/VectorUtils.h"
+#include "llvm/IR/ConstantRange.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Operator.h"
+#include "llvm/IR/PatternMatch.h"
+#include "llvm/Support/KnownBits.h"
+
 #include <fstream>
 #include <iostream>
 
@@ -56,19 +80,42 @@ static Value *_simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
 
 static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned);
 
+/// Given operands for a CastInst, fold the result or return null.
+static Value *_simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
+                                const SimplifyQuery &Q, unsigned);
+
+static APInt stripAndComputeConstantOffsets(const DataLayout &DL, Value *&V,
+                                            bool AllowNonInbounds = false) {
+  assert(V->getType()->isPtrOrPtrVectorTy());
+
+  APInt Offset = APInt::getZero(DL.getIndexTypeSizeInBits(V->getType()));
+  V = V->stripAndAccumulateConstantOffsets(DL, Offset, AllowNonInbounds);
+  // As that strip may trace through `addrspacecast`, need to sext or trunc
+  // the offset calculated.
+  return Offset.sextOrTrunc(DL.getIndexTypeSizeInBits(V->getType()));
+}
+
 /// Given a bitwise logic op, check if the operands are add/sub with a common
 /// source value and inverted constant (identity: C - X -> ~(X + ~C)).
 static Value *_simplifyLogicOfAddSub(Value *Op0, Value *Op1,
                                      Instruction::BinaryOps Opcode) {
   assert(Op0->getType() == Op1->getType() && "Mismatched binop types");
   assert(BinaryOperator::isBitwiseLogicOp(Opcode) && "Expected logic op");
+  LLVM_DEBUG(dbgs() << "_simplifyLogicOfAddSub opcode : " << Instruction::getOpcodeName(Opcode) << "\n");
+  LLVM_DEBUG(dbgs() << "OP0 : ";Op0->dump());
+  LLVM_DEBUG(dbgs() << "OP1 : ";Op1->dump());
   Value *X;
   Constant *C1, *C2;
+
+  //LLVM_DEBUG(dbgs() << "??? : "; m_Add(m_Value(X), m_Constant(C1)).dump());
+
   if ((match(Op0, m_Add(m_Value(X), m_Constant(C1))) &&
        match(Op1, m_Sub(m_Constant(C2), m_Specific(X)))) ||
       (match(Op1, m_Add(m_Value(X), m_Constant(C1))) &&
        match(Op0, m_Sub(m_Constant(C2), m_Specific(X))))) {
+    LLVM_DEBUG(dbgs() << "match inside : \n");
     if (ConstantExpr::getNot(C1) == C2) {
+      LLVM_DEBUG(dbgs() << "ConstantExpr : \n");
       // (X + C) & (~C - X) --> (X + C) & ~(X + C) --> 0
       // (X + C) | (~C - X) --> (X + C) | ~(X + C) --> -1
       // (X + C) ^ (~C - X) --> (X + C) ^ ~(X + C) --> -1
@@ -77,6 +124,9 @@ static Value *_simplifyLogicOfAddSub(Value *Op0, Value *Op1,
                                         : ConstantInt::getAllOnesValue(Ty);
     }
   }
+
+
+  LLVM_DEBUG(dbgs() << "PASS! \n");
   return nullptr;
 }
 
@@ -115,9 +165,10 @@ static Value *simplifyBinOp(unsigned Opcode, Value *LHS, Value *RHS,
     return ::simplifyAddInst(LHS, RHS, false, false, Q);
   case Instruction::Xor:
     return ::simplifyXorInst(LHS, RHS, Q);
-  /*
   case Instruction::Sub:
-    return simplifySubInst(LHS, RHS, false, false, Q, MaxRecurse);
+    return ::simplifySubInst(LHS, RHS, false, false, Q);
+
+  /*
   case Instruction::Mul:
     return simplifyMulInst(LHS, RHS, Q, MaxRecurse);
   case Instruction::SDiv:
@@ -154,6 +205,8 @@ static Value *simplifyBinOp(unsigned Opcode, Value *LHS, Value *RHS,
   }
 }
 
+
+
 /// Generic simplifications for associative binary operations.
 /// Returns the simpler value, or null if none was found.
 static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
@@ -162,8 +215,9 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
                                        unsigned MaxRecurse) {
   assert(Instruction::isAssociative(Opcode) && "Not an associative operation!");
   LLVM_DEBUG(dbgs() << "enter simplifyAssociativeBinOp : "
-                    << "Op : " << Instruction::getOpcodeName(Opcode);
-             LHS->dump(); RHS->dump());
+                    << "Op : " << Instruction::getOpcodeName(Opcode) << "\n");
+  LLVM_DEBUG(dbgs() << "LHS : "; LHS->dump());
+  LLVM_DEBUG(dbgs() << "RHS : "; RHS->dump());
 
   // Recursion is always used, so bail out at once if we already hit the limit.
   if (!MaxRecurse--)
@@ -177,15 +231,19 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
     Value *A = Op0->getOperand(0);
     Value *B = Op0->getOperand(1);
     Value *C = RHS;
-
+    LLVM_DEBUG(dbgs() << "check : ";A->dump();B->dump();C->dump());
     // Does "B op C" simplify?
     if (Value *V = simplifyBinOp(Opcode, B, C, Q, MaxRecurse)) {
+      LLVM_DEBUG(dbgs() << "(B op C) simplifyBinOp : ";V->dump());
       // It does!  Return "A op V" if it simplifies or is already available.
       // If V equals B then "A op V" is just the LHS.
-      if (V == B)
+      if (V == B) {
+        LLVM_DEBUG(dbgs() << "V == B : ";V->dump());
         return LHS;
+      }
       // Otherwise return "A op V" if it simplifies.
       if (Value *W = simplifyBinOp(Opcode, A, V, Q, MaxRecurse)) {
+        LLVM_DEBUG(dbgs() << "(A op V) simplifyBinOp : ";W->dump());
         ++NumReassoc;
         return W;
       }
@@ -197,7 +255,7 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
     Value *A = LHS;
     Value *B = Op1->getOperand(0);
     Value *C = Op1->getOperand(1);
-
+    LLVM_DEBUG(dbgs() << "check : ";A->dump();B->dump();C->dump());
     // Does "A op B" simplify?
     if (Value *V = simplifyBinOp(Opcode, A, B, Q, MaxRecurse)) {
       // It does!  Return "V op C" if it simplifies or is already available.
@@ -221,7 +279,7 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
     Value *A = Op0->getOperand(0);
     Value *B = Op0->getOperand(1);
     Value *C = RHS;
-
+    LLVM_DEBUG(dbgs() << "check : ";A->dump();B->dump();C->dump());
     // Does "C op A" simplify?
     if (Value *V = simplifyBinOp(Opcode, C, A, Q, MaxRecurse)) {
       // It does!  Return "V op B" if it simplifies or is already available.
@@ -241,7 +299,7 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
     Value *A = LHS;
     Value *B = Op1->getOperand(0);
     Value *C = Op1->getOperand(1);
-
+    LLVM_DEBUG(dbgs() << "check : ";A->dump();B->dump();C->dump());
     // Does "C op A" simplify?
     if (Value *V = simplifyBinOp(Opcode, C, A, Q, MaxRecurse)) {
       // It does!  Return "B op V" if it simplifies or is already available.
@@ -256,13 +314,210 @@ static Value *simplifyAssociativeBinOp(Instruction::BinaryOps Opcode,
     }
   }
 
+  LLVM_DEBUG(dbgs() << "exit simplifyAssociativeBinOp\n");
   return nullptr;
 }
+
+
+
+
+/// Compute the constant difference between two pointer values.
+/// If the difference is not a constant, returns zero.
+static Constant *computePointerDifference(const DataLayout &DL, Value *LHS,
+                                          Value *RHS) {
+  APInt LHSOffset = stripAndComputeConstantOffsets(DL, LHS);
+  APInt RHSOffset = stripAndComputeConstantOffsets(DL, RHS);
+
+  // If LHS and RHS are not related via constant offsets to the same base
+  // value, there is nothing we can do here.
+  if (LHS != RHS)
+    return nullptr;
+
+  // Otherwise, the difference of LHS - RHS can be computed as:
+  //    LHS - RHS
+  //  = (LHSOffset + Base) - (RHSOffset + Base)
+  //  = LHSOffset - RHSOffset
+  Constant *Res = ConstantInt::get(LHS->getContext(), LHSOffset - RHSOffset);
+  if (auto *VecTy = dyn_cast<VectorType>(LHS->getType()))
+    Res = ConstantVector::getSplat(VecTy->getElementCount(), Res);
+  return Res;
+}
+
+
+static Value *_simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
+                               const SimplifyQuery &Q, unsigned MaxRecurse) {
+  if (auto *C = dyn_cast<Constant>(Op))
+    return ConstantFoldCastOperand(CastOpc, C, Ty, Q.DL);
+
+  if (auto *CI = dyn_cast<CastInst>(Op)) {
+    auto *Src = CI->getOperand(0);
+    Type *SrcTy = Src->getType();
+    Type *MidTy = CI->getType();
+    Type *DstTy = Ty;
+    if (Src->getType() == Ty) {
+      auto FirstOp = static_cast<Instruction::CastOps>(CI->getOpcode());
+      auto SecondOp = static_cast<Instruction::CastOps>(CastOpc);
+      Type *SrcIntPtrTy =
+          SrcTy->isPtrOrPtrVectorTy() ? Q.DL.getIntPtrType(SrcTy) : nullptr;
+      Type *MidIntPtrTy =
+          MidTy->isPtrOrPtrVectorTy() ? Q.DL.getIntPtrType(MidTy) : nullptr;
+      Type *DstIntPtrTy =
+          DstTy->isPtrOrPtrVectorTy() ? Q.DL.getIntPtrType(DstTy) : nullptr;
+      if (CastInst::isEliminableCastPair(FirstOp, SecondOp, SrcTy, MidTy, DstTy,
+                                         SrcIntPtrTy, MidIntPtrTy,
+                                         DstIntPtrTy) == Instruction::BitCast)
+        return Src;
+    }
+  }
+
+  // bitcast x -> x
+  if (CastOpc == Instruction::BitCast)
+    if (Op->getType() == Ty)
+      return Op;
+
+  return nullptr;
+}
+
+
+/// Given operands for a Sub, see if we can fold the result.
+/// If not, this returns null.
+static Value *_simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+                              const SimplifyQuery &Q, unsigned MaxRecurse) {
+  if (Constant *C = foldOrCommuteConstant(Instruction::Sub, Op0, Op1, Q))
+    return C;
+
+  // X - poison -> poison
+  // poison - X -> poison
+  if (isa<PoisonValue>(Op0) || isa<PoisonValue>(Op1))
+    return PoisonValue::get(Op0->getType());
+
+  // X - undef -> undef
+  // undef - X -> undef
+  if (Q.isUndefValue(Op0) || Q.isUndefValue(Op1))
+    return UndefValue::get(Op0->getType());
+
+  // X - 0 -> X
+  if (match(Op1, m_Zero()))
+    return Op0;
+
+  // X - X -> 0
+  if (Op0 == Op1)
+    return Constant::getNullValue(Op0->getType());
+
+  // Is this a negation?
+  if (match(Op0, m_Zero())) {
+    // 0 - X -> 0 if the sub is NUW.
+    if (isNUW)
+      return Constant::getNullValue(Op0->getType());
+
+    KnownBits Known = llvm::computeKnownBits(Op1, Q.DL, 0, Q.AC, Q.CxtI, Q.DT);
+    if (Known.Zero.isMaxSignedValue()) {
+      // Op1 is either 0 or the minimum signed value. If the sub is NSW, then
+      // Op1 must be 0 because negating the minimum signed value is undefined.
+      if (isNSW)
+        return Constant::getNullValue(Op0->getType());
+
+      // 0 - X -> X if X is 0 or the minimum signed value.
+      return Op1;
+    }
+  }
+
+  // (X + Y) - Z -> X + (Y - Z) or Y + (X - Z) if everything simplifies.
+  // For example, (X + Y) - Y -> X; (Y + X) - Y -> X
+  Value *X = nullptr, *Y = nullptr, *Z = Op1;
+  if (MaxRecurse && match(Op0, m_Add(m_Value(X), m_Value(Y)))) { // (X + Y) - Z
+    // See if "V === Y - Z" simplifies.
+    if (Value *V = simplifyBinOp(Instruction::Sub, Y, Z, Q, MaxRecurse - 1))
+      // It does!  Now see if "X + V" simplifies.
+      if (Value *W = simplifyBinOp(Instruction::Add, X, V, Q, MaxRecurse - 1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+    // See if "V === X - Z" simplifies.
+    if (Value *V = simplifyBinOp(Instruction::Sub, X, Z, Q, MaxRecurse - 1))
+      // It does!  Now see if "Y + V" simplifies.
+      if (Value *W = simplifyBinOp(Instruction::Add, Y, V, Q, MaxRecurse - 1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+  }
+
+  // X - (Y + Z) -> (X - Y) - Z or (X - Z) - Y if everything simplifies.
+  // For example, X - (X + 1) -> -1
+  X = Op0;
+  if (MaxRecurse && match(Op1, m_Add(m_Value(Y), m_Value(Z)))) { // X - (Y + Z)
+    // See if "V === X - Y" simplifies.
+    if (Value *V = simplifyBinOp(Instruction::Sub, X, Y, Q, MaxRecurse - 1))
+      // It does!  Now see if "V - Z" simplifies.
+      if (Value *W = simplifyBinOp(Instruction::Sub, V, Z, Q, MaxRecurse - 1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+    // See if "V === X - Z" simplifies.
+    if (Value *V = simplifyBinOp(Instruction::Sub, X, Z, Q, MaxRecurse - 1))
+      // It does!  Now see if "V - Y" simplifies.
+      if (Value *W = simplifyBinOp(Instruction::Sub, V, Y, Q, MaxRecurse - 1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+  }
+
+  // Z - (X - Y) -> (Z - X) + Y if everything simplifies.
+  // For example, X - (X - Y) -> Y.
+  Z = Op0;
+  if (MaxRecurse && match(Op1, m_Sub(m_Value(X), m_Value(Y)))) // Z - (X - Y)
+    // See if "V === Z - X" simplifies.
+    if (Value *V = simplifyBinOp(Instruction::Sub, Z, X, Q, MaxRecurse - 1))
+      // It does!  Now see if "V + Y" simplifies.
+      if (Value *W = simplifyBinOp(Instruction::Add, V, Y, Q, MaxRecurse - 1)) {
+        // It does, we successfully reassociated!
+        ++NumReassoc;
+        return W;
+      }
+
+  // trunc(X) - trunc(Y) -> trunc(X - Y) if everything simplifies.
+  if (MaxRecurse && match(Op0, m_Trunc(m_Value(X))) &&
+      match(Op1, m_Trunc(m_Value(Y))))
+    if (X->getType() == Y->getType())
+      // See if "V === X - Y" simplifies.
+      if (Value *V = simplifyBinOp(Instruction::Sub, X, Y, Q, MaxRecurse - 1))
+        // It does!  Now see if "trunc V" simplifies.
+        if (Value *W = _simplifyCastInst(Instruction::Trunc, V, Op0->getType(), Q, MaxRecurse - 1))
+          // It does, return the simplified "trunc V".
+          return W;
+
+  // Variations on GEP(base, I, ...) - GEP(base, i, ...) -> GEP(null, I-i, ...).
+  if (match(Op0, m_PtrToInt(m_Value(X))) && match(Op1, m_PtrToInt(m_Value(Y))))
+    if (Constant *Result = computePointerDifference(Q.DL, X, Y))
+      return ConstantExpr::getIntegerCast(Result, Op0->getType(), true);
+
+  // i1 sub -> xor.
+  if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
+    if (Value *V = _simplifyXorInst(Op0, Op1, Q, MaxRecurse - 1))
+      return V;
+
+  // Threading Sub over selects and phi nodes is pointless, so don't bother.
+  // Threading over the select in "A - select(cond, B, C)" means evaluating
+  // "A-B" and "A-C" and seeing if they are equal; but they are equal if and
+  // only if B and C are equal.  If B and C are equal then (since we assume
+  // that operands have already been simplified) "select(cond, B, C)" should
+  // have been simplified to the common value of B and C already.  Analysing
+  // "A-B" and "A-C" thus gains nothing, but costs compile time.  Similarly
+  // for threading over phi nodes.
+
+  return nullptr;
+}
+
 
 /// Given operands for a Xor, see if we can fold the result.
 /// If not, this returns null.
 static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned MaxRecurse) {
-  LLVM_DEBUG(dbgs() << "Enter simplifyXorInst : "; Op0->dump(); Op1->dump(););
+  LLVM_DEBUG(dbgs() << "Enter simplifyXorInst : ";
+             dbgs() << "Op0 : "; Op0->dump(); dbgs() << "Op1 : "; Op1->dump(););
   if (Constant *C = foldOrCommuteConstant(Instruction::Xor, Op0, Op1, Q)) {
     LLVM_DEBUG(dbgs() << "foldOrCommuteConstant : "; C->dump());
     return C;
@@ -337,6 +592,27 @@ static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, u
   }
 
   // Try some generic simplifications for associative operations.
+  if (Op0->getType()->isIntOrIntVectorTy(1)) {
+    if (Instruction *I = dyn_cast<Instruction>(Op0)) {
+      if (I->getOpcode() == Instruction::Add) {
+        if (Value *V =
+                simplifyAssociativeBinOp(Instruction::Add, Op0, Op1, Q, MaxRecurse)) {
+          LLVM_DEBUG(dbgs() << "simplifyAssociativeBinOp : "; V->dump());
+          return V;
+        }
+      }
+      // Sub operator did not associatedBinOp
+      if (I->getOpcode() == Instruction::Sub) {
+        if (Value *V =
+                _simplifySubInst(Op0, Op1, false, false, Q, MaxRecurse)) {
+          LLVM_DEBUG(dbgs() << "simplifyAssociativeBinOp : "; V->dump());
+          return V;
+        }
+      }
+    }
+  }
+
+  // Try some generic simplifications for associative operations.
   if (Value *V =
           simplifyAssociativeBinOp(Instruction::Xor, Op0, Op1, Q, MaxRecurse)) {
     LLVM_DEBUG(dbgs() << "simplifyAssociativeBinOp : "; V->dump());
@@ -351,7 +627,7 @@ static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, u
   // have been simplified to the common value of B and C already.  Analysing
   // "A^B" and "A^C" thus gains nothing, but costs compile time.  Similarly
   // for threading over phi nodes.
-
+  LLVM_DEBUG(dbgs() << "simplify inst not matched : \n";);
   return nullptr;
 }
 
@@ -444,6 +720,7 @@ static Value *_simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
   // have been simplified to the common value of B and C already.  Analysing
   // "A+B" and "A+C" thus gains nothing, but costs compile time.  Similarly
   // for threading over phi nodes.
+  LLVM_DEBUG(dbgs() << "simplify inst not matched : \n");
   return nullptr;
 }
 
@@ -474,57 +751,6 @@ static Value *simplifyInstructionWithOperands(Instruction *I,
   return Result == I ? UndefValue::get(I->getType()) : Result;
 }
 
-TEST(LOCAL, simplifyAdd) {
-  std::stringstream IR;
-  std::ifstream in("simplify/add.ll");
-  IR << in.rdbuf();
-
-  // Parse the module.
-  LLVMContext Context;
-  std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
-
-  for (Function &F : M->functions()) {
-    LLVM_DEBUG(dbgs() << F.getName() << '\n';);
-    DominatorTree DT(F);
-
-    for (BasicBlock &BB : F) {
-      if (!DT.isReachableFromEntry(&BB))
-        continue;
-      for (Instruction &I : BB) {
-        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
-          // simplifier.visit(I);
-        }
-      }
-    }
-  }
-}
-
-TEST(LOCAL, simplifyAddSub) {
-  std::stringstream IR;
-  std::ifstream in("simplify/addsub.ll");
-  IR << in.rdbuf();
-
-  // Parse the module.
-  LLVMContext Context;
-  std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
-
-  for (Function &F : M->functions()) {
-    LLVM_DEBUG(dbgs() << F.getName() << '\n';);
-    DominatorTree DT(F);
-
-    // Visit the instructions in the function using the InstVisitor
-    for (BasicBlock &BB : F) {
-      if (!DT.isReachableFromEntry(&BB))
-        continue;
-      for (Instruction &I : BB) {
-        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
-          // simplifier.visit(I);
-        }
-      }
-    }
-  }
-}
-
 Value *llvm::simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
                              const SimplifyQuery &Query) {
   return ::_simplifyAddInst(Op0, Op1, IsNSW, IsNUW, Query, RecursionLimit);
@@ -532,6 +758,12 @@ Value *llvm::simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
 
 Value *llvm::simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q) {
   return ::_simplifyXorInst(Op0, Op1, Q, RecursionLimit);
+}
+
+
+Value *llvm::simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+                             const SimplifyQuery &Q) {
+  return ::_simplifySubInst(Op0, Op1, isNSW, isNUW, Q, RecursionLimit);
 }
 
 Value *llvm::simplifyInstructionWithOperands(Instruction *I,
@@ -675,6 +907,10 @@ Value *llvm::simplifyInstructionWithOperands(Instruction *I,
   /// If called on unreachable code, the above logic may report that the
   /// instruction simplified to itself.  Make life easier for users by
   /// detecting that case here, returning a safe value instead.
+
+  if (Result) 
+    LLVM_DEBUG(dbgs() << "simplify success ; ";Result->dump());
+
   return Result == I ? UndefValue::get(I->getType()) : Result;
 }
 
@@ -734,6 +970,12 @@ static bool runImpl(Function &F, const SimplifyQuery &SQ,
     Next->clear();
   } while (!ToSimplify->empty());
 
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      LLVM_DEBUG(dbgs() << "[RESULT] Instruction : "; I.dump());
+    }
+  }
+
   return Changed;
 }
 
@@ -746,7 +988,10 @@ TEST(LOCAL, simplifyXor) {
   LLVMContext Context;
   std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
 
-  std::vector<std::string> test = {"test7"};
+  std::vector<std::string> test = {
+    //"test7", 
+    "test10",
+    "test8"};
   for (std::string el : test) {
     LLVM_DEBUG(dbgs() << el << '\n';);
     auto *F = M->getFunction(el);
@@ -761,6 +1006,60 @@ TEST(LOCAL, simplifyXor) {
   }
 }
 
+/*
+TEST(LOCAL, simplifyAddSub) {
+  std::stringstream IR;
+  std::ifstream in("simplify/addsub.ll");
+  IR << in.rdbuf();
+
+  // Parse the module.
+  LLVMContext Context;
+  std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+
+  for (Function &F : M->functions()) {
+    LLVM_DEBUG(dbgs() << F.getName() << '\n';);
+    DominatorTree DT(F);
+
+    // Visit the instructions in the function using the InstVisitor
+    for (BasicBlock &BB : F) {
+      if (!DT.isReachableFromEntry(&BB))
+        continue;
+      for (Instruction &I : BB) {
+        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
+          // simplifier.visit(I);
+        }
+      }
+    }
+  }
+}
+
+
+TEST(LOCAL, simplifyAdd) {
+  std::stringstream IR;
+  std::ifstream in("simplify/add.ll");
+  IR << in.rdbuf();
+
+  // Parse the module.
+  LLVMContext Context;
+  std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+
+  for (Function &F : M->functions()) {
+    LLVM_DEBUG(dbgs() << F.getName() << '\n';);
+    DominatorTree DT(F);
+
+    for (BasicBlock &BB : F) {
+      if (!DT.isReachableFromEntry(&BB))
+        continue;
+      for (Instruction &I : BB) {
+        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
+          // simplifier.visit(I);
+        }
+      }
+    }
+  }
+}
+
+*/
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
