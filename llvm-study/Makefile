@@ -46,23 +46,26 @@ LOCAL_STUDY_OBJ := $(objdir)/$(LOCAL_STUDY).op
 SIMPLIFY_STUDY	:= simplify-study
 SIMPLIFY_SRC := $(srcdir)/$(SIMPLIFY_STUDY).cpp
 SIMPLIFY_OBJ := $(objdir)/$(SIMPLIFY_STUDY).op
+INST_STUDY	:= simplify-study
+INST_SRC := $(srcdir)/$(INST_STUDY).cpp
+INST_OBJ := $(objdir)/$(INST_STUDY).op
 
 
 default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
 $(SIMPLIFY_STUDY): $(SIMPLIFY_SRC)
-	$(CXX) -o $@ $< -g -pg -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+	$(CXX) -o $@ $< -g -pg -O0 -lgtest -lcurses -lz -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
 
 $(LOCAL_STUDY_OBJ): $(LOCAL_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
 $(LOCAL_STUDY): $(LOCAL_STUDY_OBJ)
-	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread -lcurses -lz $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
 
 $(LOOP_STUDY_OBJ): $(LOOP_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
 $(LOOP_STUDY): $(LOOP_STUDY_OBJ)
-	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
+	$(CXX) -o $@ $< -g -O0 -lgtest -lpthread -lcurses -lz $(LLVM_CXXFLAGS) $(LLVM_BLDFLAGS)
 
 $(FLATTEN_OBJ): $(FLATTEN_SRC)
 	$(CXX) -o $@ $< -fPIC -c -Wall $(LLVM_CXXFLAGS)

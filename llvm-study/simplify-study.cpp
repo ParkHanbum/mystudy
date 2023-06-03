@@ -65,6 +65,9 @@ using namespace llvm::PatternMatch;
 
 #define DEBUG_TYPE "simplify-study"
 
+namespace study {
+using namespace study;
+
 enum { RecursionLimit = 3 };
 
 STATISTIC(NumReassoc, "Number of reassociations");
@@ -75,13 +78,13 @@ STATISTIC(NumReassoc, "Number of reassociations");
     X;                                                                             \
   } while (false)
 
-static Value *_simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
+static Value *simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
                                const SimplifyQuery &Q, unsigned);
 
-static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned);
+static Value *simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned);
 
 /// Given operands for a CastInst, fold the result or return null.
-static Value *_simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
+static Value *simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
                                 const SimplifyQuery &Q, unsigned);
 
 static APInt stripAndComputeConstantOffsets(const DataLayout &DL, Value *&V,
@@ -97,7 +100,7 @@ static APInt stripAndComputeConstantOffsets(const DataLayout &DL, Value *&V,
 
 /// Given a bitwise logic op, check if the operands are add/sub with a common
 /// source value and inverted constant (identity: C - X -> ~(X + ~C)).
-static Value *_simplifyLogicOfAddSub(Value *Op0, Value *Op1,
+static Value *simplifyLogicOfAddSub(Value *Op0, Value *Op1,
                                      Instruction::BinaryOps Opcode) {
   assert(Op0->getType() == Op1->getType() && "Mismatched binop types");
   assert(BinaryOperator::isBitwiseLogicOp(Opcode) && "Expected logic op");
@@ -344,7 +347,7 @@ static Constant *computePointerDifference(const DataLayout &DL, Value *LHS,
 }
 
 
-static Value *_simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
+static Value *simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
                                const SimplifyQuery &Q, unsigned MaxRecurse) {
   if (auto *C = dyn_cast<Constant>(Op))
     return ConstantFoldCastOperand(CastOpc, C, Ty, Q.DL);
@@ -381,7 +384,7 @@ static Value *_simplifyCastInst(unsigned CastOpc, Value *Op, Type *Ty,
 
 /// Given operands for a Sub, see if we can fold the result.
 /// If not, this returns null.
-static Value *_simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+static Value *simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
                               const SimplifyQuery &Q, unsigned MaxRecurse) {
   if (Constant *C = foldOrCommuteConstant(Instruction::Sub, Op0, Op1, Q))
     return C;
@@ -486,7 +489,7 @@ static Value *_simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
       // See if "V === X - Y" simplifies.
       if (Value *V = simplifyBinOp(Instruction::Sub, X, Y, Q, MaxRecurse - 1))
         // It does!  Now see if "trunc V" simplifies.
-        if (Value *W = _simplifyCastInst(Instruction::Trunc, V, Op0->getType(), Q, MaxRecurse - 1))
+        if (Value *W = simplifyCastInst(Instruction::Trunc, V, Op0->getType(), Q, MaxRecurse - 1))
           // It does, return the simplified "trunc V".
           return W;
 
@@ -497,7 +500,7 @@ static Value *_simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
 
   // i1 sub -> xor.
   if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
-    if (Value *V = _simplifyXorInst(Op0, Op1, Q, MaxRecurse - 1))
+    if (Value *V = simplifyXorInst(Op0, Op1, Q, MaxRecurse - 1))
       return V;
 
   // Threading Sub over selects and phi nodes is pointless, so don't bother.
@@ -512,10 +515,9 @@ static Value *_simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   return nullptr;
 }
 
-
 /// Given operands for a Xor, see if we can fold the result.
 /// If not, this returns null.
-static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned MaxRecurse) {
+static Value *simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, unsigned MaxRecurse) {
   LLVM_DEBUG(dbgs() << "Enter simplifyXorInst : ";
              dbgs() << "Op0 : "; Op0->dump(); dbgs() << "Op1 : "; Op1->dump(););
   if (Constant *C = foldOrCommuteConstant(Instruction::Xor, Op0, Op1, Q)) {
@@ -586,7 +588,7 @@ static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, u
     return R;
   }
 
-  if (Value *V = _simplifyLogicOfAddSub(Op0, Op1, Instruction::Xor)) {
+  if (Value *V = simplifyLogicOfAddSub(Op0, Op1, Instruction::Xor)) {
     LLVM_DEBUG(dbgs() << "_simplifyLogicOfAddSub  : "; V->dump());
     return V;
   }
@@ -604,7 +606,7 @@ static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, u
       // Sub operator did not associatedBinOp
       if (I->getOpcode() == Instruction::Sub) {
         if (Value *V =
-                _simplifySubInst(Op0, Op1, false, false, Q, MaxRecurse)) {
+                simplifySubInst(Op0, Op1, false, false, Q, MaxRecurse)) {
           LLVM_DEBUG(dbgs() << "simplifyAssociativeBinOp : "; V->dump());
           return V;
         }
@@ -631,8 +633,8 @@ static Value *_simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q, u
   return nullptr;
 }
 
-static Value *_simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
-                               const SimplifyQuery &Q, unsigned MaxRecurse) {
+static Value *simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
+                              const SimplifyQuery &Q, unsigned MaxRecurse) {
   LLVM_DEBUG(dbgs() << "Enter simplifyAddInst : "; Op0->dump(); Op1->dump(););
   if (Constant *C = foldOrCommuteConstant(Instruction::Add, Op0, Op1, Q)) {
     LLVM_DEBUG(dbgs() << "foldOrCommuteConstant : "; C->dump());
@@ -700,7 +702,7 @@ static Value *_simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
 
   /// i1 add -> xor.
   if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1)) {
-    if (Value *V = _simplifyXorInst(Op0, Op1, Q, MaxRecurse)) {
+    if (Value *V = simplifyXorInst(Op0, Op1, Q, MaxRecurse)) {
       LLVM_DEBUG(dbgs() << "simplifyXorInst : "; V->dump());
       return V;
     }
@@ -741,35 +743,36 @@ static Value *simplifyInstructionWithOperands(Instruction *I,
   default:
     llvm_unreachable("Not Handled!");
   case Instruction::Add:
-    Result = simplifyAddInst(
+    Result = ::simplifyAddInst(
         NewOps[0], NewOps[1], Q.IIQ.hasNoSignedWrap(cast<BinaryOperator>(I)),
         Q.IIQ.hasNoUnsignedWrap(cast<BinaryOperator>(I)), Q);
   case Instruction::Xor:
-    Result = simplifyXorInst(NewOps[0], NewOps[1], Q);
+    Result = ::simplifyXorInst(NewOps[0], NewOps[1], Q);
   }
 
   return Result == I ? UndefValue::get(I->getType()) : Result;
 }
 
-Value *llvm::simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
+Value *simplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
                              const SimplifyQuery &Query) {
-  return ::_simplifyAddInst(Op0, Op1, IsNSW, IsNUW, Query, RecursionLimit);
+  return simplifyAddInst(Op0, Op1, IsNSW, IsNUW, Query, RecursionLimit);
 }
 
-Value *llvm::simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q) {
-  return ::_simplifyXorInst(Op0, Op1, Q, RecursionLimit);
+Value *simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q) {
+  return simplifyXorInst(Op0, Op1, Q, RecursionLimit);
 }
 
 
-Value *llvm::simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+Value *simplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
                              const SimplifyQuery &Q) {
-  return ::_simplifySubInst(Op0, Op1, isNSW, isNUW, Q, RecursionLimit);
+  return simplifySubInst(Op0, Op1, isNSW, isNUW, Q, RecursionLimit);
 }
 
-Value *llvm::simplifyInstructionWithOperands(Instruction *I,
-                                             ArrayRef<Value *> NewOps,
-                                             const SimplifyQuery &SQ,
-                                             OptimizationRemarkEmitter *ORE) {
+/*
+Value *simplifyInstructionWithOperands(Instruction *I,
+                                       ArrayRef<Value *> NewOps,
+                                       const SimplifyQuery &SQ,
+                                       OptimizationRemarkEmitter *ORE) {
   const SimplifyQuery Q = SQ.CxtI ? SQ : SQ.getWithInstruction(I);
   Value *Result = nullptr;
 
@@ -789,7 +792,7 @@ Value *llvm::simplifyInstructionWithOperands(Instruction *I,
     Result = simplifyFAddInst(NewOps[0], NewOps[1], I->getFastMathFlags(), Q);
     break;
   case Instruction::Add:
-    Result = simplifyAddInst(
+    Result = study::simplifyAddInst(
         NewOps[0], NewOps[1], Q.IIQ.hasNoSignedWrap(cast<BinaryOperator>(I)),
         Q.IIQ.hasNoUnsignedWrap(cast<BinaryOperator>(I)), Q);
     break;
@@ -797,7 +800,7 @@ Value *llvm::simplifyInstructionWithOperands(Instruction *I,
     Result = simplifyFSubInst(NewOps[0], NewOps[1], I->getFastMathFlags(), Q);
     break;
   case Instruction::Sub:
-    Result = simplifySubInst(
+    Result = study::simplifySubInst(
         NewOps[0], NewOps[1], Q.IIQ.hasNoSignedWrap(cast<BinaryOperator>(I)),
         Q.IIQ.hasNoUnsignedWrap(cast<BinaryOperator>(I)), Q);
     break;
@@ -889,11 +892,11 @@ Value *llvm::simplifyInstructionWithOperands(Instruction *I,
         NewOps[0], NewOps[1], SVI->getShuffleMask(), SVI->getType(), Q);
     break;
   }
-  /*
+
   case Instruction::PHI:
     Result = simplifyPHINode(cast<PHINode>(I), NewOps, Q);
     break;
-  */
+
   case Instruction::Call: {
     // TODO: Use NewOps
     Result = simplifyCall(cast<CallInst>(I), Q);
@@ -908,14 +911,15 @@ Value *llvm::simplifyInstructionWithOperands(Instruction *I,
   /// instruction simplified to itself.  Make life easier for users by
   /// detecting that case here, returning a safe value instead.
 
-  if (Result) 
+  if (Result)
     LLVM_DEBUG(dbgs() << "simplify success ; ";Result->dump());
 
   return Result == I ? UndefValue::get(I->getType()) : Result;
 }
+*/
 
-Value *llvm::simplifyInstruction(Instruction *I, const SimplifyQuery &SQ,
-                                 OptimizationRemarkEmitter *ORE) {
+Value *simplifyInstruction(Instruction *I, const SimplifyQuery &SQ,
+                           OptimizationRemarkEmitter *ORE) {
   SmallVector<Value *, 8> Ops(I->operands());
   return llvm::simplifyInstructionWithOperands(I, Ops, SQ, ORE);
 }
@@ -947,7 +951,7 @@ static bool runImpl(Function &F, const SimplifyQuery &SQ,
           DeadInstsInBB.push_back(&I);
           Changed = true;
         } else if (!I.use_empty()) {
-          if (Value *V = simplifyInstruction(&I, SQ, ORE)) {
+          if (Value *V = study::simplifyInstruction(&I, SQ, ORE)) {
             LLVM_DEBUG(dbgs() << "has Simplified : "; V->dump());
             // Mark all uses for resimplification next time round the loop.
             for (User *U : I.users())
@@ -1060,6 +1064,7 @@ TEST(LOCAL, simplifyAdd) {
 }
 
 */
+} // namespace study end
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

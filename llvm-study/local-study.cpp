@@ -44,6 +44,9 @@ using namespace llvm;
     X;                                                                             \
   } while (false)
 
+namespace study {
+
+
 enum AllocType : uint8_t {
   OpNewLike = 1 << 0,        // allocates; never returns null
   MallocLike = 1 << 1,       // allocates; may return null
@@ -584,7 +587,7 @@ TEST(LOCAL, wouldInstructionBeTriviallyDead1) {
 }
 
 
-
+} // namespace study end
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
