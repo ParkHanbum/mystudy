@@ -44,6 +44,56 @@ using namespace llvm;
     dbgs() << "[" << DEBUG_TYPE << "]" << __FUNCTION__ << ":" << __LINE__ << "\t" X "\n"; \
   } while (false)
 
+//===----------------------------------------------------------------------===//
+// LoopSplit implementation
+//
+
+bool LoopSplit::run(Loop &L) const {
+  return splitLoop(L);
+}
+
+bool LoopSplit::splitLoop(Loop &L) const {
+  assert(L.isLoopSimplifyForm() && "Expecting a loop in simplify form");
+  assert(L.isSafeToClone() && "Loop is not safe to be cloned");
+
+  // Clone the original loop.
+  BasicBlock *Preheader = L.getLoopPreheader();
+  BasicBlock *Pred = Preheader->getSinglePredecessor();
+
+  assert(Pred && "Preheader does not have a single predecessor");
+
+  ValueToValueMapTy VMap;
+  LLVM_DEBUG(dbgs() << "InsertPoint: " << Preheader->getName() << "\n");
+  Loop *ClonedLoop = cloneLoop(L, *Preheader, *Pred, VMap);
+  LLVM_DEBUG(dbgs() << "Created " << ClonedLoop << ":" << *ClonedLoop << "\n");
+
+  Preheader = ClonedLoop->getLoopPreheader();
+
+  return true;
+}
+
+Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
+                           ValueToValueMapTy &VMap) const {
+  assert(L.getSubLoops().empty() && "Expecting a innermost loop");
+
+  BasicBlock *ExitBlock = L.getExitBlock();
+  assert(ExitBlock && "Expecting outermost loop to have a valid exit block");
+
+  // Clone the original loop and remap instructions in the cloned loop.
+  SmallVector<BasicBlock *, 4> ClonedLoopBlocks;
+
+  Loop *NewLoop = cloneLoopWithPreheader(&Preheader, &Pred, &L,
+                                         VMap, "", &LI, &DT, ClonedLoopBlocks);
+  LLVM_DEBUG(dbgs() << "cloned : \t"; L.dump(); NewLoop->dump(); dbgs() << "\n");
+  VMap[ExitBlock] = &Preheader;
+  remapInstructionsInBlocks(ClonedLoopBlocks, VMap);
+
+  LLVM_DEBUG(dbgs() << "Pred Terminator : "; Pred.dump(); dbgs() << "\n");
+  Pred.getTerminator()->replaceUsesOfWith(&Preheader,
+                                          NewLoop->getLoopPreheader());
+
+  return NewLoop;
+}
 
 static bool isCandidate(const Loop &L) {
   if (!L.isLoopSimplifyForm()) {
@@ -74,7 +124,7 @@ static bool isCandidate(const Loop &L) {
   return true;
 }
 
-static bool doLoopOptimization(Loop &L) {
+static bool doLoopOptimization(Loop &L, LoopInfo &LI, DominatorTree &DT) {
   bool Changed = false;
 
   LLVM_DEBUG(dbgs() << "Entering LoopOptTutorialPass::run\n");
@@ -82,6 +132,7 @@ static bool doLoopOptimization(Loop &L) {
   Changed = isCandidate(L);
   if (Changed != false) {
     LLVM_DEBUGM("This loop is right candidate");
+    Changed = LoopSplit(LI, DT).run(L);
   }
 
   return Changed;
@@ -92,7 +143,7 @@ PreservedAnalyses LoopOptTutorialPass::run(Loop &L, LoopAnalysisManager &LAM,
                                            LPMUpdater &) {
   bool Changed = false;
 
-  Changed = doLoopOptimization(L);
+  Changed = doLoopOptimization(L, AR.LI, AR.DT);
   if (!Changed)
     return PreservedAnalyses::all();
 

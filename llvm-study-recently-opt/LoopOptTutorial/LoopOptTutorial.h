@@ -25,6 +25,29 @@ namespace llvm {
 class Loop;
 class LPMUpdater;
 
+/// This class splits the innermost loop in a loop nest in the middle.
+class LoopSplit {
+public:
+  LoopSplit(LoopInfo &LI, DominatorTree &DT) : LI(LI), DT(DT) {}
+
+  bool run(Loop &L) const;
+
+private:
+  ///
+  bool splitLoop(Loop &L) const;
+
+  /// Clone loop \p L and insert the cloned loop before the basic block \p
+  /// InsertBefore, \p Pred is the predecessor of \p L.
+  /// Note: \p L is expected to be the innermost loop in a loop nest or a top
+  /// level loop.
+  Loop *cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
+                  ValueToValueMapTy &VMap) const;
+
+private:
+  LoopInfo &LI;
+  DominatorTree &DT;
+};
+
 class LoopOptTutorialPass : public PassInfoMixin<LoopOptTutorialPass> {
 public:
   PreservedAnalyses run(Loop &L, LoopAnalysisManager &AM,
