@@ -16,7 +16,9 @@
 #define LLVM_TRANSFORMS_SCALAR_LOOPOPTTUTORIAL_H
 
 #include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 
 namespace llvm {
 

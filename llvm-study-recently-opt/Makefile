@@ -27,7 +27,7 @@ TUTORIAL_OBJ	:= $(srcdir)/$(TUTORIAL)/$(TUTORIAL).op
 
 
 loop-opt-tutorial: $(TUTORIAL).so $(TUTORIAL).bc
-$(TUTORIAL).bc: $(srcdir)/LoopOptTutorial/simple.ll
+$(TUTORIAL).bc: $(srcdir)/LoopOptTutorial/loop_nest.ll
 	llvm-as $< -o $@
 
 $(TUTORIAL_OBJ): $(TUTORIAL_SRC)
