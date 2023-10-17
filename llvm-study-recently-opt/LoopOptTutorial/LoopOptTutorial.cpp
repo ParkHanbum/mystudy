@@ -152,9 +152,37 @@ void LoopSplit::dumpLoopFunction(const StringRef Msg, const Loop &L) const {
   F.dump();
 }
 
+bool LoopSplit::isCandidate(const Loop &L) const {
+  // Require loops with preheaders and dedicated exits
+  if (!L.isLoopSimplifyForm())
+    return false;
+  // Since we use cloning to split the loop, it has to be safe to clone
+  if (!L.isSafeToClone())
+    return false;
+  // If the loop has multiple exiting blocks, do not split
+  if (!L.getExitingBlock())
+    return false;
+  // If loop has multiple exit blocks, do not split.
+  if (!L.getExitBlock())
+    return false;
+  // Only split innermost loops. Thus, if the loop has any children, it cannot
+  // be split.
+  //auto Children = L.getSubLoops();
+  if (!L.getSubLoops().empty())
+    return false;
+  return true;
+}
+
 bool LoopSplit::run(Loop &L) const {
-  // return splitLoop(L);
-  // TODO:  filter non-candidates & diagnose them
+  LLVM_DEBUG(dbgs() << "Entering \n");
+
+  if (isCandidate(L))
+    LLVM_DEBUG(dbgs() << "Loop " << L.getName()
+                      << " is a candidate for splitting!\n");
+  else
+    LLVM_DEBUG(dbgs() << "Loop " << L.getName()
+                      << " is not a candidate for splitting.\n");
+
   return splitLoopInHalf(L);
 }
 
@@ -261,46 +289,10 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
   return NewLoop;
 }
 
-static bool isCandidate(const Loop &L) {
-  if (!L.isLoopSimplifyForm()) {
-    LLVM_DEBUGM("[Reject Reason] Require loops with preheaders and dedicated exits");
-    return false;
-  }
-
-  if (!L.isSafeToClone()) {
-    LLVM_DEBUGM("[Reject Reason] Since we use cloning to split the loop, it has to be safe to clone");
-    return false;
-  }
-
-  if (!L.getExitingBlock()) {
-    LLVM_DEBUGM("[Reject Reason] If the loop has multiple exiting blocks, do not split");
-    return false;
-  }
-
-  if (!L.getExitBlock()) {
-    LLVM_DEBUGM("[Reject Reason] If loop has multiple exit blocks, do not split.");
-    return false;
-  }
-
-  if (!L.getSubLoops().empty()) {
-    LLVM_DEBUGM("Only split innermost loops. Thus, if the loop has any children, it cannot be split.");
-    return false;
-  }
-
-  return true;
-}
-
 static bool doLoopOptimization(Loop &L, LoopInfo &LI, DominatorTree &DT) {
   bool Changed = false;
 
-  LLVM_DEBUG(dbgs() << "Entering LoopOptTutorialPass::run\n");
-  LLVM_DEBUG(dbgs() << "Loop: "; dbgs() << "\n");
-  Changed = isCandidate(L);
-  if (Changed != false) {
-    LLVM_DEBUGM("This loop is right candidate");
-    Changed = LoopSplit(LI, DT).run(L);
-  }
-
+  Changed = LoopSplit(LI, DT).run(L);
   return Changed;
 }
 

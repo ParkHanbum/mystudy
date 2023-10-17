@@ -33,6 +33,10 @@ public:
   bool run(Loop &L) const;
 
 private:
+
+  /// Determines if \p L is a candidate for splitting
+  bool isCandidate(const Loop &L) const;
+
   ///
   bool splitLoop(Loop &L) const;
 
