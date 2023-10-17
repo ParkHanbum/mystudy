@@ -193,7 +193,7 @@ bool LoopSplit::splitLoopInHalf(Loop &L) const {
   LLVM_DEBUG(dumpLoopFunction("After splitting preheader:\n", L););
 
   LLVM_DEBUG(dbgs() << "InsertPoint: " << Preheader->getName() << "\n");
-  Loop *ClonedLoop = cloneLoopInHalf(L, *InsertBefore, *Pred);
+  Loop *ClonedLoop = cloneLoopInHalf(L, *InsertBefore, *Preheader);
   LLVM_DEBUG(dumpLoopFunction("After cloning the loop:\n", L););
   Preheader = ClonedLoop->getLoopPreheader();
 
