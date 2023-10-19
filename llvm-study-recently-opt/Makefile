@@ -50,7 +50,7 @@ $(TUTORIAL).so: $(TUTORIAL_OBJ)
 all: loop-opt-tutorial
 
 run-loop-opt-tutorial: loop-opt-tutorial
-	opt -load-pass-plugin=./$(TUTORIAL).so -passes="loop(loop-rotate,$<)" $(TUTORIAL).bc -o $(TUTORIAL)-passed.bin
+	opt -load-pass-plugin=./$(TUTORIAL).so -passes="require<opt-remark-emit>,loop(loop-rotate,$<)" $(TUTORIAL).bc -o $(TUTORIAL)-passed.bin
 	llvm-dis $(TUTORIAL)-passed.bin
 	@echo generated .ll file which passed $(TUTORIAL) pass.
 	@echo see $(TUTORIAL)-passed.bin.ll

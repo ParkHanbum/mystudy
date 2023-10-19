@@ -25,11 +25,14 @@ namespace llvm {
 
 class Loop;
 class LPMUpdater;
+class OptimizationRemarkEmitter;
 
 /// This class splits the innermost loop in a loop nest in the middle.
 class LoopSplit {
 public:
-  LoopSplit(LoopInfo &LI, DominatorTree &DT, ScalarEvolution &SE) : LI(LI), DT(DT), SE(SE) {}
+  LoopSplit(LoopInfo &LI, DominatorTree &DT, ScalarEvolution &SE,
+            OptimizationRemarkEmitter &ORE)
+      : LI(LI), DT(DT), SE(SE), ORE(ORE) {}
 
   bool run(Loop &L) const;
 
@@ -68,6 +71,15 @@ private:
 #error "Invalid DOMTREE_DETAIL. Use 0, 1, 2 or 3"
 #endif
 
+  /// Report that loop \p L that is not a candidate for splitting.
+  bool reportInvalidCandidate(const Loop &L, Statistic &Stat) const;
+
+  /// Report that loop \p L was successfully split.
+  void reportSuccess(const Loop &L, Statistic &Stat) const;
+
+  /// Report that loop \p L was not successfully split.
+  void reportFailure(const Loop &L, Statistic &Stat) const;
+
   // Dump the LLVM IR for function containing the given loop \p L.
   void dumpLoopFunction(const StringRef Msg, const Loop &L) const;
 
@@ -75,6 +87,7 @@ private:
   LoopInfo &LI;
   DominatorTree &DT;
   ScalarEvolution &SE;
+  OptimizationRemarkEmitter &ORE;
 };
 
 

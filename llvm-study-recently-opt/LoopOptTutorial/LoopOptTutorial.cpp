@@ -18,6 +18,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/OptimizationRemarkEmitter.h"
 
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
@@ -38,6 +39,14 @@ using namespace llvm;
 
 #define STRINGIFY(x) #x
 #define STRINGIFYMACRO(y) STRINGIFY(y)
+
+STATISTIC(LoopSplitted, "Loop has been splitted");
+STATISTIC(LoopNotSplitted, "Failed to split the loop");
+STATISTIC(NotInSimplifiedForm, "Loop not in simplified form");
+STATISTIC(UnsafeToClone, "Loop cannot be safely cloned");
+STATISTIC(NotUniqueExitingBlock, "Loop doesn't have a unique exiting block");
+STATISTIC(NotUniqueExitBlock, "Loop doesn't have a unique exit block");
+STATISTIC(NotInnerMostLoop, "Loop is not an innermost loop");
 
 #define LLVM_DEBUG(X)                                                              \
   do {                                                                             \
@@ -242,6 +251,36 @@ void LoopSplit::updateDominatorTree(const Loop &OrigLoop,
 
 #endif
 
+
+
+bool LoopSplit::reportInvalidCandidate(const Loop &L, Statistic &Stat) const {
+  assert(L.getLoopPreheader() && "Expecting loop with a preheader");
+  ++Stat;
+  ORE.emit(OptimizationRemarkAnalysis(DEBUG_TYPE, Stat.getName(),
+                                      L.getStartLoc(), L.getLoopPreheader())
+           << "[" << L.getLoopPreheader()->getParent()->getName() << "]: "
+           << "Loop is not a candidate for splitting: " << Stat.getDesc());
+  return false;
+}
+
+void LoopSplit::reportSuccess(const Loop &L, Statistic &Stat) const {
+  assert(L.getLoopPreheader() && "Expecting loop with a preheader");
+  ++Stat;
+  ORE.emit(OptimizationRemark(DEBUG_TYPE, Stat.getName(), L.getStartLoc(),
+                              L.getLoopPreheader())
+           << "[" << L.getLoopPreheader()->getParent()->getName()
+           << "]: " << Stat.getDesc());
+}
+
+void LoopSplit::reportFailure(const Loop &L, Statistic &Stat) const {
+  assert(L.getLoopPreheader() && "Expecting loop with a preheader");
+  ++Stat;
+  ORE.emit(OptimizationRemarkMissed(DEBUG_TYPE, Stat.getName(), L.getStartLoc(),
+                                    L.getLoopPreheader())
+           << "[" << L.getLoopPreheader()->getParent()->getName()
+           << "]: " << Stat.getDesc());
+}
+
 void LoopSplit::dumpLoopFunction(const StringRef Msg, const Loop &L) const {
   const Function &F = *L.getHeader()->getParent();
   dbgs() << Msg;
@@ -251,21 +290,22 @@ void LoopSplit::dumpLoopFunction(const StringRef Msg, const Loop &L) const {
 bool LoopSplit::isCandidate(const Loop &L) const {
   // Require loops with preheaders and dedicated exits
   if (!L.isLoopSimplifyForm())
-    return false;
+    return reportInvalidCandidate(L, NotInSimplifiedForm);
   // Since we use cloning to split the loop, it has to be safe to clone
   if (!L.isSafeToClone())
-    return false;
+    return reportInvalidCandidate(L, UnsafeToClone);
   // If the loop has multiple exiting blocks, do not split
   if (!L.getExitingBlock())
-    return false;
+    return reportInvalidCandidate(L, NotUniqueExitingBlock);
   // If loop has multiple exit blocks, do not split.
   if (!L.getExitBlock())
-    return false;
+    return reportInvalidCandidate(L, NotUniqueExitBlock);
   // Only split innermost loops. Thus, if the loop has any children, it cannot
   // be split.
   //auto Children = L.getSubLoops();
   if (!L.getSubLoops().empty())
-    return false;
+    return reportInvalidCandidate(L, NotInnerMostLoop);
+
   return true;
 }
 
@@ -276,16 +316,13 @@ bool LoopSplit::run(Loop &L) const {
   if (!isCandidate(L))
     return false;
 
-  if (!isCandidate(L)) {
-    LLVM_DEBUG(dbgs() << "Loop " << L.getName()
-                      << " is not a candidate for splitting.\n");
-    return false;
+  // Attempt to split the loop and report the result.
+  if (!splitLoop(L)) {
+    reportFailure(L, LoopNotSplitted);
+    autopsy_loop(&L, &SE);
   }
 
-  // Attempt to split the loop and report the result.
-  if (!splitLoop(L))
-    autopsy_loop(&L, &SE);
-
+  reportSuccess(L, LoopSplitted);
   return true;
 }
 
@@ -401,9 +438,20 @@ ICmpInst *LoopSplit::getLatchCmpInst(const Loop &L) const {
 PreservedAnalyses LoopOptTutorialPass::run(Loop &L, LoopAnalysisManager &LAM,
                                            LoopStandardAnalysisResults &AR,
                                            LPMUpdater &) {
-  bool Changed = false;
+  // Retrieve a function analysis manager to get a cached
+  // OptimizationRemarkEmitter.
+  const auto &FAM =
+      LAM.getResult<FunctionAnalysisManagerLoopProxy>(L, AR);
+  Function *F = L.getHeader()->getParent();
+  auto *ORE = FAM.getCachedResult<OptimizationRemarkEmitterAnalysis>(*F);
 
-  Changed = LoopSplit(AR.LI, AR.DT, AR.SE).run(L);
+  if (!ORE)
+    report_fatal_error("OptimizationRemarkEmitterAnalysis was not cached");
+
+  LLVM_DEBUG(dbgs() << "Entering LoopOptTutorialPass::run\n");
+  LLVM_DEBUG(dbgs() << "Loop: "; L.dump(); dbgs() << "\n");
+
+  bool Changed = LoopSplit(AR.LI, AR.DT, AR.SE, *ORE).run(L);
 
   if (!Changed)
     return PreservedAnalyses::all();
