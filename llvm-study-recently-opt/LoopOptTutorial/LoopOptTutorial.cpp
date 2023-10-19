@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===
 
 #include "LoopOptTutorial.h"
+#include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/LoopPass.h"
@@ -44,6 +45,35 @@ using namespace llvm;
   do {                                                                                    \
     dbgs() << "[" << DEBUG_TYPE << "]" << __FUNCTION__ << ":" << __LINE__ << "\t" X "\n"; \
   } while (false)
+
+
+static void autopsy_loop(Loop *L, ScalarEvolution *SE) {
+  BasicBlock *Header = L->getHeader();
+  LLVM_DEBUGM("[LoopHeader] : ";); Header->dump();
+  BasicBlock *latch = L->getLoopLatch();
+  LLVM_DEBUGM("[LoopLatch] : ";); latch->dump();
+  BranchInst *BI = dyn_cast_or_null<BranchInst>(latch->getTerminator());
+  LLVM_DEBUGM("[LoopLatch Inst] : ";); BI->dump();
+
+  if (BI->isConditional()) {
+    ICmpInst *cmp = dyn_cast<ICmpInst>(BI->getCondition());
+    Value *Op0 = cmp->getOperand(0);
+    Value *Op1 = cmp->getOperand(1);
+    Op0->dump();
+    Op1->dump();
+  }
+
+  for (PHINode &PHI : Header->phis()) {
+    InductionDescriptor ID;
+    if (!InductionDescriptor::isInductionPHI(&PHI, L, SE, ID))
+      continue;
+
+    LLVM_DEBUGM("PHI IndVar : ";); PHI.dump();
+    Value *StepInst = PHI.getIncomingValueForBlock(latch);
+    if (StepInst)
+      LLVM_DEBUGM("PHI IndVar getIncomingValueForBlock : "; StepInst->dump(););
+  }
+}
 
 /// Clones a loop \p OrigLoop.  Returns the loop and the blocks in \p
 /// Blocks.
@@ -142,6 +172,8 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
   return NewLoop;
 }
 
+
+
 //===----------------------------------------------------------------------===//
 // LoopSplit implementation
 //
@@ -176,19 +208,27 @@ bool LoopSplit::isCandidate(const Loop &L) const {
 bool LoopSplit::run(Loop &L) const {
   LLVM_DEBUG(dbgs() << "Entering \n");
 
-  if (isCandidate(L))
-    LLVM_DEBUG(dbgs() << "Loop " << L.getName()
-                      << " is a candidate for splitting!\n");
-  else
+  // First analyze the loop and prune invalid candidates.
+  if (!isCandidate(L))
+    return false;
+
+  if (!isCandidate(L)) {
     LLVM_DEBUG(dbgs() << "Loop " << L.getName()
                       << " is not a candidate for splitting.\n");
+    return false;
+  }
 
-  return splitLoopInHalf(L);
+  // Attempt to split the loop and report the result.
+  if (!splitLoopInHalf(L))
+    autopsy_loop(&L, &SE);
+
+  return true;
 }
 
 bool LoopSplit::splitLoop(Loop &L) const {
   assert(L.isLoopSimplifyForm() && "Expecting a loop in simplify form");
   assert(L.isSafeToClone() && "Loop is not safe to be cloned");
+  assert(L.getSubLoops().empty() && "Expecting a innermost loop");
 
   // Clone the original loop.
   BasicBlock *Preheader = L.getLoopPreheader();
@@ -209,13 +249,13 @@ bool LoopSplit::splitLoop(Loop &L) const {
 bool LoopSplit::splitLoopInHalf(Loop &L) const {
   assert(L.isLoopSimplifyForm() && "Expecting a loop in simplify form");
   assert(L.isSafeToClone() && "Loop is not safe to be cloned");
-  assert(L.getSubLoops().empty() && "Expecting a innermost loop");
+
+  Instruction *Split =
+      computeSplitPoint(L, L.getLoopPreheader()->getTerminator());
 
   // Split the loop preheader to create an insertion point for the cloned loop.
   BasicBlock *Preheader = L.getLoopPreheader();
-  BasicBlock *Pred = Preheader->getSinglePredecessor();
 
-  assert(Pred && "Preheader does not have a single predecessor");
   LLVM_DEBUG(dumpLoopFunction("Before splitting preheader:\n", L););
   BasicBlock *InsertBefore = SplitBlock(Preheader, Preheader->getTerminator(), &DT, &LI);
   LLVM_DEBUG(dumpLoopFunction("After splitting preheader:\n", L););
@@ -224,6 +264,16 @@ bool LoopSplit::splitLoopInHalf(Loop &L) const {
   Loop *ClonedLoop = cloneLoopInHalf(L, *InsertBefore, *Preheader);
   LLVM_DEBUG(dumpLoopFunction("After cloning the loop:\n", L););
   Preheader = ClonedLoop->getLoopPreheader();
+
+  // Modify the upper bound of the cloned loop.
+  ICmpInst *LatchCmpInst = getLatchCmpInst(*ClonedLoop);
+  assert(LatchCmpInst && "Unable to find the latch comparison instruction");
+  LatchCmpInst->setOperand(1, Split);
+
+  // Modify the lower bound of the original loop.
+  PHINode *IndVar = L.getInductionVariable(SE);
+  assert(IndVar && "Unable to find the induction variable PHI node");
+  IndVar->setIncomingValueForBlock(L.getLoopPreheader(), Split);
 
   return true;
 }
@@ -289,11 +339,28 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
   return NewLoop;
 }
 
-static bool doLoopOptimization(Loop &L, LoopInfo &LI, DominatorTree &DT) {
-  bool Changed = false;
+Instruction *LoopSplit::computeSplitPoint(const Loop &L,
+                                          Instruction *InsertBefore) const {
+  std::optional<Loop::LoopBounds> Bounds = L.getBounds(SE);
+  assert(Bounds.has_value() && "Unable to retrieve the loop bounds");
 
-  Changed = LoopSplit(LI, DT).run(L);
-  return Changed;
+  Value &IVInitialVal = Bounds->getInitialIVValue();
+  Value &IVFinalVal = Bounds->getFinalIVValue();
+  auto *Sub =
+    BinaryOperator::Create(Instruction::Sub, &IVFinalVal, &IVInitialVal, "", InsertBefore);
+
+  return BinaryOperator::Create(Instruction::UDiv, Sub,
+                                ConstantInt::get(IVFinalVal.getType(), 2),
+                                "", InsertBefore);
+}
+
+ICmpInst *LoopSplit::getLatchCmpInst(const Loop &L) const {
+  if (BasicBlock *Latch = L.getLoopLatch())
+    if (BranchInst *BI = dyn_cast_or_null<BranchInst>(Latch->getTerminator()))
+      if (BI->isConditional())
+        return dyn_cast<ICmpInst>(BI->getCondition());
+
+  return nullptr;
 }
 
 PreservedAnalyses LoopOptTutorialPass::run(Loop &L, LoopAnalysisManager &LAM,
@@ -301,7 +368,8 @@ PreservedAnalyses LoopOptTutorialPass::run(Loop &L, LoopAnalysisManager &LAM,
                                            LPMUpdater &) {
   bool Changed = false;
 
-  Changed = doLoopOptimization(L, AR.LI, AR.DT);
+  Changed = LoopSplit(AR.LI, AR.DT, AR.SE).run(L);
+
   if (!Changed)
     return PreservedAnalyses::all();
 
