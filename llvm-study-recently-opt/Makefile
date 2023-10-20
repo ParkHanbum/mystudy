@@ -20,6 +20,17 @@ LLVM_CXXFLAGS := $(shell $(LLVM_CONFIG) --cxxflags) -Wno-unused-value -Wno-macro
 LLVM_LDFLAGS  := $(shell $(LLVM_CONFIG) --ldflags)
 LLVM_BLDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs)
 
+# DOMTREE Detail related option
+ifdef DOMTREE_DETAIL_LEVEL
+  DOMTREE_DETAIL_LEVEL := 0
+  ifeq ($(filter-out 0 1 2 3,$(DOMTREE_DETAIL_LEVEL)),)
+	  LLVM_CXXFLAGS += -DDOMTREE_DETAIL_LEVEL=$(DOMTREE_DETAIL_LEVEL)
+  else
+      $(error Input value must be 0, 1, 2 or 3)
+  endif
+endif
+
+
 # Loop Optimization Tutorial
 TUTORIAL		:= LoopOptTutorial
 TUTORIAL_SRC	:= $(srcdir)/$(TUTORIAL)/$(TUTORIAL).cpp

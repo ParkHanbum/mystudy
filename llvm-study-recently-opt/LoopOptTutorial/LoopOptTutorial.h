@@ -15,6 +15,7 @@
 #ifndef LLVM_TRANSFORMS_SCALAR_LOOPOPTTUTORIAL_H
 #define LLVM_TRANSFORMS_SCALAR_LOOPOPTTUTORIAL_H
 
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/PassManager.h"
@@ -57,6 +58,15 @@ private:
 
   /// Get the latch comparison instruction of loop \p L.
   ICmpInst *getLatchCmpInst(const Loop &L) const;
+
+#if (DOMTREE_DETAIL_LEVEL >= 0) && (DOMTREE_DETAIL_LEVEL <= 3)
+  /// Update the dominator tree after cloning the loop.
+  void updateDominatorTree(const Loop &OrigLoop, const Loop &ClonedLoop,
+                           BasicBlock &InsertBefore, BasicBlock &Pred,
+                           ValueToValueMapTy &VMap) const;
+#else
+#error "Invalid DOMTREE_DETAIL. Use 0, 1, 2 or 3"
+#endif
 
   // Dump the LLVM IR for function containing the given loop \p L.
   void dumpLoopFunction(const StringRef Msg, const Loop &L) const;
