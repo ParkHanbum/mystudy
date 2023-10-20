@@ -219,7 +219,7 @@ bool LoopSplit::run(Loop &L) const {
   }
 
   // Attempt to split the loop and report the result.
-  if (!splitLoopInHalf(L))
+  if (!splitLoop(L))
     autopsy_loop(&L, &SE);
 
   return true;
@@ -229,26 +229,6 @@ bool LoopSplit::splitLoop(Loop &L) const {
   assert(L.isLoopSimplifyForm() && "Expecting a loop in simplify form");
   assert(L.isSafeToClone() && "Loop is not safe to be cloned");
   assert(L.getSubLoops().empty() && "Expecting a innermost loop");
-
-  // Clone the original loop.
-  BasicBlock *Preheader = L.getLoopPreheader();
-  BasicBlock *Pred = Preheader->getSinglePredecessor();
-
-  assert(Pred && "Preheader does not have a single predecessor");
-
-  ValueToValueMapTy VMap;
-  LLVM_DEBUG(dbgs() << "InsertPoint: " << Preheader->getName() << "\n");
-  Loop *ClonedLoop = cloneLoop(L, *Preheader, *Pred, VMap);
-  LLVM_DEBUG(dbgs() << "Created " << ClonedLoop << ":" << *ClonedLoop << "\n");
-
-  Preheader = ClonedLoop->getLoopPreheader();
-
-  return true;
-}
-
-bool LoopSplit::splitLoopInHalf(Loop &L) const {
-  assert(L.isLoopSimplifyForm() && "Expecting a loop in simplify form");
-  assert(L.isSafeToClone() && "Loop is not safe to be cloned");
 
   Instruction *Split =
       computeSplitPoint(L, L.getLoopPreheader()->getTerminator());
@@ -261,7 +241,7 @@ bool LoopSplit::splitLoopInHalf(Loop &L) const {
   LLVM_DEBUG(dumpLoopFunction("After splitting preheader:\n", L););
 
   LLVM_DEBUG(dbgs() << "InsertPoint: " << Preheader->getName() << "\n");
-  Loop *ClonedLoop = cloneLoopInHalf(L, *InsertBefore, *Preheader);
+  Loop *ClonedLoop = cloneLoop(L, *InsertBefore, *Preheader);
   LLVM_DEBUG(dumpLoopFunction("After cloning the loop:\n", L););
   Preheader = ClonedLoop->getLoopPreheader();
 
@@ -278,8 +258,9 @@ bool LoopSplit::splitLoopInHalf(Loop &L) const {
   return true;
 }
 
-Loop *LoopSplit::cloneLoopInHalf(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) const {
+Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) const {
   // Clone the original loop, insert the clone before the "InsertBefore" BB.
+  Function &F = *L.getHeader()->getParent();
   SmallVector<BasicBlock *, 4> ClonedLoopBlocks;
 
   ValueToValueMapTy VMap;
@@ -300,40 +281,6 @@ Loop *LoopSplit::cloneLoopInHalf(Loop &L, BasicBlock &InsertBefore, BasicBlock &
   // Make the predecessor of original loop jump to the cloned loop.
   LLVM_DEBUG(dbgs() << "replace cloned loop preheader direct to NewLoop\n");
   Pred.getTerminator()->replaceUsesOfWith(&InsertBefore,
-                                          NewLoop->getLoopPreheader());
-  return NewLoop;
-}
-
-Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
-                           ValueToValueMapTy &VMap) const {
-  assert(L.getSubLoops().empty() && "Expecting a innermost loop");
-
-  BasicBlock *ExitBlock = L.getExitBlock();
-  assert(ExitBlock && "Expecting outermost loop to have a valid exit block");
-
-  // Clone the original loop and remap instructions in the cloned loop.
-  SmallVector<BasicBlock *, 4> ClonedLoopBlocks;
-
-  LLVM_DEBUG(dbgs() << "Preheader :\n"; Preheader.dump(); dbgs() << "\n");
-  LLVM_DEBUG(dbgs() << "Pred :\n"; Pred.dump(); dbgs() << "\n");
-  LLVM_DEBUG(dbgs() << "ExitBlock :\n"; ExitBlock->dump(); dbgs() << "\n");
-  Loop *NewLoop = myCloneLoopWithPreheader(&Preheader, &Pred, &L,
-                                           VMap, "", &LI, &DT, ClonedLoopBlocks);
-  LLVM_DEBUG(dbgs() << "[origin Loop] \n"; L.dump(); dbgs() << "[cloned Loop] \n";
-             NewLoop->dump(); dbgs() << "\n");
-  VMap[ExitBlock] = &Preheader;
-
-  LLVM_DEBUGM("[Cloned Blocks]");
-  for (auto bb : ClonedLoopBlocks)
-    LLVM_DEBUG(bb->dump(); dbgs() << "\n");
-
-  remapInstructionsInBlocks(ClonedLoopBlocks, VMap);
-  LLVM_DEBUGM("[Remapped Cloned Blocks]");
-  for (auto bb : ClonedLoopBlocks)
-    LLVM_DEBUG(bb->dump(); dbgs() << "\n");
-
-  LLVM_DEBUG(dbgs() << "Pred Terminator : "; Pred.dump(); dbgs() << "\n");
-  Pred.getTerminator()->replaceUsesOfWith(&Preheader,
                                           NewLoop->getLoopPreheader());
 
   return NewLoop;

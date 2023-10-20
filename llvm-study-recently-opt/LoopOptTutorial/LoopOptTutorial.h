@@ -37,23 +37,18 @@ private:
   /// Determines if \p L is a candidate for splitting
   bool isCandidate(const Loop &L) const;
 
-  ///
-  bool splitLoop(Loop &L) const;
-
   /// Split the given loop in the middle by creating a new loop that traverse
   /// the first half of the original iteration space and adjusting the loop
   /// bounds of \p L to traverse the remaining half.
   /// Note: \p L is expected to be the innermost loop in a loop nest or a top
   /// level loop.
-  bool splitLoopInHalf(Loop &L) const;
+  bool splitLoop(Loop &L) const;
 
   /// Clone loop \p L and insert the cloned loop before the basic block \p
   /// InsertBefore, \p Pred is the predecessor of \p L.
   /// Note: \p L is expected to be the innermost loop in a loop nest or a top
   /// level loop.
-  Loop *cloneLoop(Loop &L, BasicBlock &Preheader, BasicBlock &Pred,
-                  ValueToValueMapTy &VMap) const;
-  Loop *cloneLoopInHalf(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) const;
+  Loop *cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) const;
 
   /// Compute the point where to split the loop \p L. Return the instruction
   /// calculating the split point.
