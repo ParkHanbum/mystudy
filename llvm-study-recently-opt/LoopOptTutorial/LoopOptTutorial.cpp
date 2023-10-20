@@ -82,7 +82,6 @@ static void autopsy_loop(Loop *L, ScalarEvolution *SE) {
 static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
                                       Loop *OrigLoop, ValueToValueMapTy &VMap,
                                       const Twine &NameSuffix, LoopInfo *LI,
-                                      DominatorTree *DT,
                                       SmallVectorImpl<BasicBlock *> &Blocks);
 
 /// Clones a loop \p OrigLoop.  Returns the loop and the blocks in \p
@@ -92,7 +91,6 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
 static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
                                       Loop *OrigLoop, ValueToValueMapTy &VMap,
                                       const Twine &NameSuffix, LoopInfo *LI,
-                                      DominatorTree *DT,
                                       SmallVectorImpl<BasicBlock *> &Blocks) {
   Function *F = OrigLoop->getHeader()->getParent();
   Loop *ParentLoop = OrigLoop->getParentLoop();
@@ -115,9 +113,6 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
   // Update LoopInfo.
   if (ParentLoop)
     ParentLoop->addBasicBlockToLoop(NewPH, *LI);
-
-  // Update DominatorTree.
-  DT->addNewBlock(NewPH, LoopDomBB);
 
   for (Loop *CurLoop : OrigLoop->getLoopsInPreorder()) {
     Loop *&NewLoop = LMap[CurLoop];
@@ -144,24 +139,10 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
 
     // Update LoopInfo.
     NewLoop->addBasicBlockToLoop(NewBB, *LI);
-
-    // Add DominatorTree node. After seeing all blocks, update to correct
-    // IDom.
-    DT->addNewBlock(NewBB, NewPH);
+    if (BB == CurLoop->getHeader())
+      NewLoop->moveToHeader(NewBB);
 
     Blocks.push_back(NewBB);
-  }
-
-  for (BasicBlock *BB : OrigLoop->getBlocks()) {
-    // Update loop headers.
-    Loop *CurLoop = LI->getLoopFor(BB);
-    if (BB == CurLoop->getHeader())
-      LMap[CurLoop]->moveToHeader(cast<BasicBlock>(VMap[BB]));
-
-    // Update DominatorTree.
-    BasicBlock *IDomBB = DT->getNode(BB)->getIDom()->getBlock();
-    DT->changeImmediateDominator(cast<BasicBlock>(VMap[BB]),
-                                 cast<BasicBlock>(VMap[IDomBB]));
   }
 
   // Move them physically from the end of the block list.
@@ -267,7 +248,7 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) 
   LLVM_DEBUG(dbgs() << "Preheader :\n"; InsertBefore.dump(); dbgs() << "\n");
   LLVM_DEBUG(dbgs() << "Pred :\n"; Pred.dump(); dbgs() << "\n");
   Loop *NewLoop = myCloneLoopWithPreheader(&InsertBefore, &Pred, &L, VMap,
-                                           "ClonedLoop", &LI, &DT, ClonedLoopBlocks);
+                                           "ClonedLoop", &LI, ClonedLoopBlocks);
   assert(NewLoop && "Run ot of memory");
   LLVM_DEBUG(dbgs() << "Create new loop: " << NewLoop->getName() << "\n";
              dumpLoopFunction("After cloning loop:\n", L););
@@ -282,6 +263,22 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) 
   LLVM_DEBUG(dbgs() << "replace cloned loop preheader direct to NewLoop\n");
   Pred.getTerminator()->replaceUsesOfWith(&InsertBefore,
                                           NewLoop->getLoopPreheader());
+
+  // Recompute the dominator tree
+  DT.recalculate(F);
+
+  // Verify that the dominator tree and the loops are correct.
+#ifndef NDEBUG
+  assert(DT.verify(DominatorTree::VerificationLevel::Fast) &&
+         "Dominator tree is invalid");
+
+  L.verifyLoop();
+  NewLoop->verifyLoop();
+  if (L.getParentLoop())
+    L.getParentLoop()->verifyLoop();
+
+  LI.verify(DT);
+#endif
 
   return NewLoop;
 }
