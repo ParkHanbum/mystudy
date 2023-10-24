@@ -37,9 +37,7 @@ TUTORIAL_SRC	:= $(srcdir)/$(TUTORIAL)/$(TUTORIAL).cpp
 TUTORIAL_OBJ	:= $(srcdir)/$(TUTORIAL)/$(TUTORIAL).op
 
 
-loop-opt-tutorial: $(TUTORIAL).so $(TUTORIAL).bc
-$(TUTORIAL).bc: $(srcdir)/LoopOptTutorial/loop_nest.ll
-	llvm-as $< -o $@
+loop-opt-tutorial: $(TUTORIAL).so
 
 $(TUTORIAL_OBJ): $(TUTORIAL_SRC)
 	$(CXX) -o $@ $< -fPIC -c -Wall $(LLVM_CXXFLAGS)
@@ -49,15 +47,30 @@ $(TUTORIAL).so: $(TUTORIAL_OBJ)
 
 all: loop-opt-tutorial
 
-run-loop-opt-tutorial: loop-opt-tutorial
-	opt -load-pass-plugin=./$(TUTORIAL).so -passes="require<opt-remark-emit>,loop(loop-rotate,$<)" $(TUTORIAL).bc -o $(TUTORIAL)-passed.bin
-	llvm-dis $(TUTORIAL)-passed.bin
-	@echo generated .ll file which passed $(TUTORIAL) pass.
-	@echo see $(TUTORIAL)-passed.bin.ll
 
-run-all: run-loop-opt-tutorial
+simple: loop-opt-tutorial
+	opt -load-pass-plugin=./$(TUTORIAL).so -passes="require<opt-remark-emit>,loop(loop-rotate,$<)" $(srcdir)/$(TUTORIAL)/$@.ll -S > $@-passed.ll
+	@echo generated $@.ll file which passed $(TUTORIAL) pass.
+	@echo see $@-passed.ll
 
+loop_nest: loop-opt-tutorial
+	opt -load-pass-plugin=./$(TUTORIAL).so -passes="require<opt-remark-emit>,loop(loop-rotate,$<)" $(srcdir)/$(TUTORIAL)/$@.ll -S > $@-passed.ll
+	@echo generated $@.ll file which passed $(TUTORIAL) pass.
+	@echo see $@-passed.ll
+
+diagnostics: loop-opt-tutorial
+	opt -load-pass-plugin=./$(TUTORIAL).so -passes="require<opt-remark-emit>,loop(loop-rotate,$<)" -pass-remarks-analysis=loop-opt-tutorial $(srcdir)/$(TUTORIAL)/$@.ll -S > $@-passed.ll
+	@echo generated $@.ll file which passed $(TUTORIAL) pass.
+	@echo see $@-passed.ll
+
+run-all: simple loop_nest diagnostics
+
+gen-png: simple loop_nest diagnostics
+	for target in $^ ; do \
+		opt -passes="loop(loop-rotate),dot-cfg" $${target}-passed.ll ; \
+		dot -Tpng .*.dot > $${target}-passesd.png ; \
+	done
 
 clean::
-	$(QUIET)rm -f *.ll *.bin *.bc *.so
+	$(QUIET)rm -f *.ll *.so *.png .*.dot
 	$(QUIET)rm -f $(TUTORIAL).bc $(TUTORIAL).so $(TUTORIAL_OBJ)
