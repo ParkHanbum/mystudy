@@ -92,19 +92,19 @@ static void autopsy_loop(Loop *L, ScalarEvolution *SE) {
 /// Blocks.
 /// Updates LoopInfo assuming the loop is dominated by block \p LoopDomBB.
 /// Insert the new blocks before block specified in \p Before.
-static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
-                                      Loop *OrigLoop, ValueToValueMapTy &VMap,
-                                      const Twine &NameSuffix, LoopInfo *LI,
-                                      SmallVectorImpl<BasicBlock *> &Blocks);
+static Loop *myCloneLoopWithPreheader(
+    BasicBlock *Before, BasicBlock *LoopDomBB, Loop *OrigLoop,
+    ValueToValueMapTy &VMap, const Twine &NameSuffix, LoopInfo *LI,
+    SmallVectorImpl<BasicBlock *> &Blocks, const DominatorTree &DT,
+    SmallVector<DominatorTree::UpdateType, 8> &TreeUpdates);
 
-/// Clones a loop \p OrigLoop.  Returns the loop and the blocks in \p
-/// Blocks.
-/// Updates LoopInfo assuming the loop is dominated by block \p LoopDomBB.
-/// Insert the new blocks before block specified in \p Before.
-static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
-                                      Loop *OrigLoop, ValueToValueMapTy &VMap,
-                                      const Twine &NameSuffix, LoopInfo *LI,
-                                      SmallVectorImpl<BasicBlock *> &Blocks) {
+/// Collect updates that need to be applied to the dominator tree. These updates
+/// must be applied after the CFG is updated.
+static Loop *myCloneLoopWithPreheader(
+    BasicBlock *Before, BasicBlock *LoopDomBB, Loop *OrigLoop,
+    ValueToValueMapTy &VMap, const Twine &NameSuffix, LoopInfo *LI,
+    SmallVectorImpl<BasicBlock *> &Blocks, const DominatorTree &DT,
+    SmallVector<DominatorTree::UpdateType, 8> &TreeUpdates) {
   Function *F = OrigLoop->getHeader()->getParent();
   Loop *ParentLoop = OrigLoop->getParentLoop();
   DenseMap<Loop *, Loop *> LMap;
@@ -155,6 +155,14 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
     if (BB == CurLoop->getHeader())
       NewLoop->moveToHeader(NewBB);
 
+    // Update DomTree
+    // Get the immediate dominator for the original block
+    BasicBlock *IDomBB = DT.getNode(BB)->getIDom()->getBlock();
+    assert(VMap[IDomBB] && "Expecting immediate dominator in the value map!");
+    // Insert an edge in the dominator tree between the mapped immediate
+    // dominator of original block and the new block.
+    TreeUpdates.emplace_back(DominatorTree::UpdateType(
+        DominatorTree::Insert, cast<BasicBlock>(VMap[IDomBB]), NewBB));
     Blocks.push_back(NewBB);
   }
 
@@ -163,95 +171,23 @@ static Loop *myCloneLoopWithPreheader(BasicBlock *Before, BasicBlock *LoopDomBB,
   F->splice(Before->getIterator(), F, NewLoop->getHeader()->getIterator(),
             F->end());
 
+  // Update the dominators for old and new preheder
+  TreeUpdates.emplace_back(
+      DominatorTree::UpdateType(DominatorTree::Delete, LoopDomBB, OrigPH));
+  TreeUpdates.emplace_back(
+      DominatorTree::UpdateType(DominatorTree::Insert, LoopDomBB, NewPH));
+
+  // Update the exiting block for the new loop
+  TreeUpdates.emplace_back(DominatorTree::UpdateType(
+      DominatorTree::Insert,
+      cast<BasicBlock>(VMap[OrigLoop->getExitingBlock()]), OrigPH));
+
   return NewLoop;
 }
-
-
 
 //===----------------------------------------------------------------------===//
 // LoopSplit implementation
 //
-
-#if 1==DOMTREE_DETAIL_LEVEL
-void LoopSplit::updateDominatorTree(const Loop &OrigLoop,
-                                    const Loop &ClonedLoop,
-                                    BasicBlock &InsertBefore,
-                                    BasicBlock &Pred,
-                                    ValueToValueMapTy &VMap) const {
-  // Add the basic block that belongs to the cloned loop we have created to the
-  // dominator tree.
-  BasicBlock *NewPH = ClonedLoop.getLoopPreheader();
-  assert(NewPH && "Expecting a valid preheader");
-
-  DT.addNewBlock(NewPH, &Pred);
-  for (BasicBlock *BB : ClonedLoop.getBlocks())
-    DT.addNewBlock(BB, NewPH);
-
-  // Now update the immediate dominator of the cloned loop blocks.
-  for (BasicBlock *BB : OrigLoop.getBlocks()) {
-    BasicBlock *IDomBB = DT.getNode(BB)->getIDom()->getBlock();
-    DT.changeImmediateDominator(cast<BasicBlock>(VMap[BB]),
-                                cast<BasicBlock>(VMap[IDomBB]));
-  }
-
-  // The cloned loop exiting block now dominates the original loop.
-  DT.changeImmediateDominator(&InsertBefore, ClonedLoop.getExitingBlock());
-}
-#elif 1<DOMTREE_DETAIL_LEVEL
-void LoopSplit::updateDominatorTree(const Loop &OrigLoop,
-                                    const Loop &ClonedLoop,
-                                    BasicBlock &InsertBefore,
-                                    BasicBlock &Pred,
-                                    ValueToValueMapTy &VMap) const {
-  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
-  SmallVector<DominatorTree::UpdateType, 8> TreeUpdates;
-
-  BasicBlock *NewPH = ClonedLoop.getLoopPreheader();
-  assert(NewPH && "Expecting a valid preheader");
-
-  TreeUpdates.emplace_back(
-      DominatorTree::UpdateType(DominatorTree::Insert, &Pred, NewPH));
-
-#if 2==DOMTREE_DETAIL_LEVEL
-  for (BasicBlock *BB : ClonedLoop.getBlocks())
-    TreeUpdates.emplace_back(
-      DominatorTree::UpdateType(DominatorTree::Insert, NewPH, BB));
-#elif 3==DOMTREE_DETAIL_LEVEL
-  for (BasicBlock *BB : OrigLoop.getBlocks()) {
-    BasicBlock *IDomBB = DT.getNode(BB)->getIDom()->getBlock();
-    assert(VMap[IDomBB] && "Expecting immediate dominator of loop block to have been mapped.");
-    TreeUpdates.emplace_back(DominatorTree::UpdateType(
-        DominatorTree::Insert, cast<BasicBlock>(VMap[IDomBB]), cast<BasicBlock>(VMap[BB])));
-  }
-#endif
-
-  assert(&InsertBefore == OrigLoop.getLoopPreheader() &&
-         "Expecting InsertBefore to be the Preheader!!");
-
-  // The cloned loop exiting block now dominates the original loop
-  TreeUpdates.emplace_back(DominatorTree::UpdateType(
-      DominatorTree::Delete,
-      DT.getNode(OrigLoop.getLoopPreheader())->getIDom()->getBlock(),
-      OrigLoop.getLoopPreheader()));
-  TreeUpdates.emplace_back(DominatorTree::UpdateType(
-      DominatorTree::Insert, ClonedLoop.getExitingBlock(),
-      OrigLoop.getLoopPreheader()));
-
-  LLVM_DEBUG({
-    dbgs() << "KIT: DomTree Updates: \n";
-    for (auto u : TreeUpdates) {
-      u.print(dbgs().indent(2));
-      dbgs() << "\n";
-    }
-  });
-
-  DTU.applyUpdates(TreeUpdates);
-  DTU.flush();
-}
-
-#endif
-
-
 
 bool LoopSplit::reportInvalidCandidate(const Loop &L, Statistic &Stat) const {
   assert(L.getLoopPreheader() && "Expecting loop with a preheader");
@@ -363,12 +299,15 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) 
   // Clone the original loop, insert the clone before the "InsertBefore" BB.
   Function &F = *L.getHeader()->getParent();
   SmallVector<BasicBlock *, 4> ClonedLoopBlocks;
-
+  SmallVector<DominatorTree::UpdateType, 8> TreeUpdates;
   ValueToValueMapTy VMap;
+  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
+
   LLVM_DEBUG(dbgs() << "Preheader :\n"; InsertBefore.dump(); dbgs() << "\n");
   LLVM_DEBUG(dbgs() << "Pred :\n"; Pred.dump(); dbgs() << "\n");
   Loop *NewLoop = myCloneLoopWithPreheader(&InsertBefore, &Pred, &L, VMap,
-                                           "ClonedLoop", &LI, ClonedLoopBlocks);
+                                           "ClonedLoop", &LI, ClonedLoopBlocks,
+                                           DT, TreeUpdates);
   assert(NewLoop && "Run ot of memory");
   LLVM_DEBUG(dbgs() << "Create new loop: " << NewLoop->getName() << "\n";
              dumpLoopFunction("After cloning loop:\n", L););
@@ -384,17 +323,9 @@ Loop *LoopSplit::cloneLoop(Loop &L, BasicBlock &InsertBefore, BasicBlock &Pred) 
   Pred.getTerminator()->replaceUsesOfWith(&InsertBefore,
                                           NewLoop->getLoopPreheader());
 
-#if 0==DOMTREE_DETAIL_LEVEL
-  // Recompute the dominator tree
-  LLVM_DEBUGM("Update Domtree by using recalculate");
-  DT.recalculate(F);
-#elif 0<DOMTREE_DETAIL_LEVEL
-  LLVM_DEBUG(dbgs() << "Update Domtree with more detail handcrafted way \n";);
-  LLVM_DEBUG(dbgs() << "DETAIL LEVEL : " STRINGIFYMACRO(DOMTREE_DETAIL_LEVEL) "\n";);
-  // Now that we have cloned the loop we need to update the dominator tree.
-  updateDominatorTree(L, *NewLoop, InsertBefore, Pred, VMap);
-  LLVM_DEBUG(dbgs() << "Dominator Tree: "; DT.print(dbgs()););
-#endif
+  // Apply updates to the dominator tree
+  DTU.applyUpdates(TreeUpdates);
+  DTU.flush();
 
   // Verify that the dominator tree and the loops are correct.
   LLVM_DEBUGM("KIT: Verifying data structures after splitting loop.");

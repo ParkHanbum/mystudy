@@ -62,15 +62,6 @@ private:
   /// Get the latch comparison instruction of loop \p L.
   ICmpInst *getLatchCmpInst(const Loop &L) const;
 
-#if (DOMTREE_DETAIL_LEVEL >= 0) && (DOMTREE_DETAIL_LEVEL <= 3)
-  /// Update the dominator tree after cloning the loop.
-  void updateDominatorTree(const Loop &OrigLoop, const Loop &ClonedLoop,
-                           BasicBlock &InsertBefore, BasicBlock &Pred,
-                           ValueToValueMapTy &VMap) const;
-#else
-#error "Invalid DOMTREE_DETAIL. Use 0, 1, 2 or 3"
-#endif
-
   /// Report that loop \p L that is not a candidate for splitting.
   bool reportInvalidCandidate(const Loop &L, Statistic &Stat) const;
 
