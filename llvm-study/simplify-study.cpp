@@ -1006,15 +1006,85 @@ TEST(LOCAL, simplifyXor) {
   }
 }
 
-/*
-TEST(LOCAL, simplifyAddSub) {
+Instruction *replaceInstUsesWith(Instruction &I, Value *V)
+{
+  if (I.use_empty()) return nullptr;
+
+  V->takeName(&I);
+
+  I.replaceAllUsesWith(V);
+  return &I;
+
+}
+
+
+bool matchtest(ICmpInst &I, IRBuilder<> &IRB) {
+  CmpInst::Predicate Pred = I.getPredicate();
+  auto F = I.getParent()->getParent();
+  DominatorTree DT(*F);
+  AssumptionCache AC(*F);
+  TargetLibraryInfoImpl TLII;
+  TargetLibraryInfo TLI(TLII);
+  DataLayout DL(F->getParent());
+  SimplifyQuery Q(DL, &TLI, &DT, &AC);
+
+  IRBuilder<> Builder(I.getParent());
+
+  Value *Op0 = I.getOperand(0);
+  Value *Op1 = I.getOperand(1);
+
+  bool change = false;
+  {
+    Value *A, *B;
+    auto m_Matcher =
+        m_CombineOr(m_c_And(m_ZExtOrSExt(m_Value(A)), m_ZExtOrSExt(m_Value(B))),
+                    m_Or(m_ZExtOrSExt(m_Value(A)), m_ZExtOrSExt(m_Value(B))));
+
+    if (match(&I, m_ICmp(Pred, m_OneUse(m_Matcher),
+                         m_CombineOr(m_Zero(), m_One()))) &&
+        I.isEquality() && A->getType()->isIntOrIntVectorTy(1) &&
+        B->getType()->isIntOrIntVectorTy(1)) {
+      LLVM_DEBUG(dbgs() << "TEST match"; A->dump(); B->dump());
+      BinaryOperator *BinOp = dyn_cast<BinaryOperator>(Op0);
+      LLVM_DEBUG(dbgs() << " both i1 "; BinOp->dump());
+      Builder.SetInsertPoint(&I);
+      auto NewBinOp =
+        BinaryOperator::Create(BinOp->getOpcode(), A, B, BinOp->getName());
+      Builder.Insert(NewBinOp);
+      if ((Pred == ICmpInst::Predicate::ICMP_EQ && match(Op1, m_One())) ||
+      (Pred == ICmpInst::Predicate::ICMP_NE && match(Op1, m_Zero())))
+      {
+        LLVM_DEBUG(dbgs() << " A op B == 1 && A op B != 0");
+        I.replaceAllUsesWith(NewBinOp);
+      }
+      if ((Pred == ICmpInst::Predicate::ICMP_EQ && match(Op1, m_Zero())) || 
+      (Pred == ICmpInst::Predicate::ICMP_NE && match(Op1, m_One()))) {
+        LLVM_DEBUG(dbgs() << " A op B == 0 && A op B != 1");
+        auto rep = BinaryOperator::CreateNot(NewBinOp);
+        Builder.Insert(rep); 
+        I.replaceAllUsesWith(rep);
+      }
+
+      dyn_cast<Instruction>(Op0)->eraseFromParent();
+      I.eraseFromParent();
+
+      change = true;
+    }
+    LLVM_DEBUG(dbgs() << "match!! end");
+  }
+
+  return change;
+}
+
+TEST(LOCAL, matchtest) {
   std::stringstream IR;
-  std::ifstream in("simplify/addsub.ll");
+  std::ifstream in("test.ll");
   IR << in.rdbuf();
 
   // Parse the module.
   LLVMContext Context;
   std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+  llvm::IRBuilder<> builder(Context);
 
   for (Function &F : M->functions()) {
     LLVM_DEBUG(dbgs() << F.getName() << '\n';);
@@ -1025,42 +1095,190 @@ TEST(LOCAL, simplifyAddSub) {
       if (!DT.isReachableFromEntry(&BB))
         continue;
       for (Instruction &I : BB) {
-        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
-          // simplifier.visit(I);
-        }
+        if (ICmpInst *ICmp = dyn_cast<ICmpInst>(&I))
+      	  if (matchtest(*ICmp, builder))
+          {
+            F.dump(); break;
+          }	      
       }
     }
   }
 }
 
 
-TEST(LOCAL, simplifyAdd) {
+
+bool matchtest2(ICmpInst &I, IRBuilder<> &IRB) {
+  CmpInst::Predicate Pred = I.getPredicate();
+  auto F = I.getParent()->getParent();
+  DominatorTree DT(*F);
+  AssumptionCache AC(*F);
+  TargetLibraryInfoImpl TLII;
+  TargetLibraryInfo TLI(TLII);
+  DataLayout DL(F->getParent());
+  SimplifyQuery Q(DL, &TLI, &DT, &AC);
+
+  IRBuilder<> Builder(I.getParent());
+
+  Value *Op0 = I.getOperand(0);
+  Value *Op1 = I.getOperand(1);
+
+  bool change = false;
+  {
+    Value *X, *Y, *New = nullptr;
+    if (match(&I, m_c_ICmp(Pred, m_Value(X), m_Value(Y))) &&
+        (match(X, m_c_Xor(m_Specific(Y), m_AllOnes())) || match(Y, m_c_Xor(m_Specific(X), m_AllOnes())))) {
+      // LLVM_DEBUG(dbgs() << "match icmp\n"; X->dump(); Y->dump(););
+
+    //  ~X s< X   -->     X s> ~X 
+    //  ~X s> X   -->     X s< ~X
+    //  ~X u< X   -->     X u> ~X
+    //  ~X u> X   -->     X u< ~X
+    if (match(X, m_c_Xor(m_Specific(Y), m_AllOnes()))) {
+      // LLVM_DEBUG(dbgs() << "match : ~X comp X \n");
+      Pred = I.getSwappedPredicate();
+      // LLVM_DEBUG(dbgs() << "prev : " << I.getPredicate() << " now : " << Pred << "\n");
+      std::swap(X, Y);
+    }
+
+    // LLVM_DEBUG(dbgs() << "X : " ; X->dump() ;dbgs() << "Y : "; Y->dump());
+
+    Value *Zero;
+    Constant *Const;
+    unsigned SrcBits = X->getType()->getScalarSizeInBits();
+    APInt C;
+    C = C.zext(SrcBits);
+    C.setSignBit(); 
+    LLVM_DEBUG(dbgs() << "C : "; C.dump(););
+    switch (Pred) {
+    case ICmpInst::ICMP_EQ:
+      New = Builder.CreateRet(Builder.getFalse());
+      I.replaceAllUsesWith(New);
+      break;
+    case ICmpInst::ICMP_NE:
+      New = Builder.CreateRet(Builder.getTrue());
+      I.replaceAllUsesWith(New);
+      break;
+    case ICmpInst::ICMP_UGT:
+    case ICmpInst::ICMP_UGE:
+      Const = ConstantInt::get(X->getType(), C);
+      LLVM_DEBUG(dbgs() << "Const"; Const->dump(););
+      New = Builder.CreateICmp(ICmpInst::ICMP_UGT, X, Const);
+      break;
+    case ICmpInst::ICMP_ULT:
+    case ICmpInst::ICMP_ULE:
+      Const = ConstantInt::get(X->getType(), C);
+      LLVM_DEBUG(dbgs() << "Const"; Const->dump(););
+      New = Builder.CreateICmp(ICmpInst::ICMP_ULT, X, Const);
+      break;
+    case ICmpInst::ICMP_SGT:
+    case ICmpInst::ICMP_SGE:
+      Zero = ConstantInt::get(X->getType(), -1);
+      New = Builder.CreateICmp(ICmpInst::ICMP_SGT, X, Zero);
+      I.replaceAllUsesWith(New);
+      break;
+    case ICmpInst::ICMP_SLT:
+    case ICmpInst::ICMP_SLE:
+      Zero = ConstantInt::get(X->getType(), 0);
+      New = Builder.CreateICmp(ICmpInst::ICMP_SLT, X, Zero);
+      I.replaceAllUsesWith(New);
+      break;
+    }
+
+    if (New) {
+      LLVM_DEBUG(dbgs() << "Old Instruction : ";I.dump());
+      LLVM_DEBUG(dbgs() << "New Instructino : ");
+      New->dump();
+    }
+    }
+  }
+  return change;
+}
+
+TEST(LOCAL, matchtest2) {
   std::stringstream IR;
-  std::ifstream in("simplify/add.ll");
+  std::ifstream in("test2.ll");
   IR << in.rdbuf();
 
   // Parse the module.
   LLVMContext Context;
   std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+  llvm::IRBuilder<> builder(Context);
 
   for (Function &F : M->functions()) {
     LLVM_DEBUG(dbgs() << F.getName() << '\n';);
     DominatorTree DT(F);
 
+    // Visit the instructions in the function using the InstVisitor
     for (BasicBlock &BB : F) {
       if (!DT.isReachableFromEntry(&BB))
         continue;
       for (Instruction &I : BB) {
-        if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
-          // simplifier.visit(I);
-        }
+        if (ICmpInst *ICmp = dyn_cast<ICmpInst>(&I))
+          if (matchtest2(*ICmp, builder)) {
+            F.dump();
+            break;
+          }
       }
     }
   }
 }
 
-*/
-int main(int argc, char **argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+      /*
+      TEST(LOCAL, simplifyAddSub) {
+        std::stringstream IR;
+        std::ifstream in("simplify/addsub.ll");
+        IR << in.rdbuf();
+
+        // Parse the module.
+        LLVMContext Context;
+        std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+
+        for (Function &F : M->functions()) {
+          LLVM_DEBUG(dbgs() << F.getName() << '\n';);
+          DominatorTree DT(F);
+
+          // Visit the instructions in the function using the InstVisitor
+          for (BasicBlock &BB : F) {
+            if (!DT.isReachableFromEntry(&BB))
+              continue;
+            for (Instruction &I : BB) {
+              if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
+                // simplifier.visit(I);
+              }
+            }
+          }
+        }
+      }
+
+
+      TEST(LOCAL, simplifyAdd) {
+        std::stringstream IR;
+        std::ifstream in("simplify/add.ll");
+        IR << in.rdbuf();
+
+        // Parse the module.
+        LLVMContext Context;
+        std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
+
+        for (Function &F : M->functions()) {
+          LLVM_DEBUG(dbgs() << F.getName() << '\n';);
+          DominatorTree DT(F);
+
+          for (BasicBlock &BB : F) {
+            if (!DT.isReachableFromEntry(&BB))
+              continue;
+            for (Instruction &I : BB) {
+              if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
+                // simplifier.visit(I);
+              }
+            }
+          }
+        }
+      }
+
+      */
+
+      int main(int argc, char **argv) {
+        testing::InitGoogleTest(&argc, argv);
+        return RUN_ALL_TESTS();
+      }
