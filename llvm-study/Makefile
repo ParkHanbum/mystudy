@@ -33,12 +33,6 @@ SIMPLIFY		:= $(LOOP)simplify
 SIMPLIFY_SRC	:= $(srcdir)/Loop/LoopInstSimplify.cpp
 SIMPLIFY_OBJ	:= $(srcdir)/Loop/LoopInstSimplify.op
 
-CONST			:= const-
-ELIMINATION		:= $(CONST)elimination
-ELIMINATION_SRC := $(srcdir)/ConstraintElimination/ConstraintElimination.cpp
-ELIMINATION_OBJ := $(srcdir)/ConstraintElimination/ConstraintElimination.op
-ELIMINATION_TEST:= $(srcdir)/ConstraintElimination/ConstraintElimination-test.ll
-
 # Utils
 LOCAL		:= local-
 
@@ -54,13 +48,7 @@ SIMPLIFY_STUDY_SRC	:= $(srcdir)/$(SIMPLIFY_STUDY).cpp
 SIMPLIFY_STUDY_OBJ	:= $(srcdir)/$(SIMPLIFY_STUDY).op
 
 
-default: $(ELIMINATION).so $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
-$(ELIMINATION_OBJ): $(ELIMINATION_SRC)
-	$(CXX) -o $@ $< -fPIC -c -Wall $(LLVM_CXXFLAGS)
-
-$(ELIMINATION).so: $(ELIMINATION_OBJ)
-	$(CXX) -o $@ $< -shared -Wl,-O1 $(LLVM_CXXFLAGS) $(LLVM_LDFLAGS)
-
+default: $(FLATTEN).so $(SIMPLIFY).so $(LOOP_STUDY) $(LOCAL_STUDY) $(SIMPLIFY_STUDY)
 $(SIMPLIFY_STUDY_OBJ): $(SIMPLIFY_STUDY_SRC)
 	$(CXX) -o $@ $< -c -g -Wall $(LLVM_CXXFLAGS)
 
@@ -97,7 +85,7 @@ $(SIMPLIFY).bc: $(srcdir)/Loop/loop-simplify1.ll
 $(FLATTEN).bc: $(srcdir)/Loop/loop-flatten-test1.ll
 	llvm-as $< -o $@
 
-run: $(ELIMINATION).so $(FLATTEN).so $(FLATTEN).bc $(SIMPLIFY).so $(SIMPLIFY).bc
+run: $(FLATTEN).so $(FLATTEN).bc $(SIMPLIFY).so $(SIMPLIFY).bc
 	opt -enable-new-pm=0 -load $(objdir)/$(FLATTEN).so --$(FLATTEN)-study $(FLATTEN).bc -o $(FLATTEN)-passed.bin
 	llvm-dis $(FLATTEN)-passed.bin
 	@echo generated .ll file which passed flatten pass.
@@ -107,9 +95,6 @@ run: $(ELIMINATION).so $(FLATTEN).so $(FLATTEN).bc $(SIMPLIFY).so $(SIMPLIFY).bc
 	llvm-dis $(SIMPLIFY)-passed.bin
 	@echo generated .ll file which passed SIMPLIFY pass.
 	@echo see $(SIMPLIFY)-passed.bin.ll
-
-	opt -enable-new-pm=0 -load $(objdir)/$(ELIMINATION).so -S $(ELIMINATION_TEST) | FileCheck $(ELIMINATION_TEST)
-	@echo ELIMINATION DONE
 
 
 clean::
