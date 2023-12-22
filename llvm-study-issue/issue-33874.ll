@@ -17,6 +17,10 @@ entry:
   ret i32 %xor7
 }
 
+;  %and = and i8 %y.coerce, 11
+;  %add = add nuw i8 %and, %x.coerce
+;  %and2 = and i8 %y.coerce, 20
+;  %0 = xor i8 %add, %and2
 define i8 @AddCounters(i8 %x.coerce, i8 %y.coerce) {
 entry:
   %narrow = add i8 %y.coerce, %x.coerce
@@ -31,3 +35,8 @@ entry:
   %bf.set33 = or disjoint i8 %bf.set20, %bf.value30
   ret i8 %bf.set33
 }
+
+
+; and( add(Y, X), 7)
+; and( add( and(X, 24), Y), 24)
+; and( add( and(X, -32) ,Y) ,-32)

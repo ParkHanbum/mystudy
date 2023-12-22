@@ -75,6 +75,8 @@ static std::unique_ptr<Module> makeLLVMModule(LLVMContext &context,
   return parseAssemblyString(modulestr, err, context);
 }
 
+
+
 int main(int argc, char **argv) {
   std::stringstream IR;
   std::ifstream in("issue-33874.ll");
@@ -84,7 +86,7 @@ int main(int argc, char **argv) {
   LLVMContext Context;
   std::unique_ptr<Module> M = makeLLVMModule(Context, IR.str().c_str());
 
-  auto *F = M->getFunction("src");
+  auto *F = M->getFunction("AddCounters");
   TargetLibraryInfoImpl TLII;
   TargetLibraryInfo TLI(TLII);
   AssumptionCache AC(*F);
@@ -110,81 +112,124 @@ int main(int argc, char **argv) {
         }
       }
 
+      struct BitFieldAddInfo {
+        Value *X;
+        Value *Y;
+        const APInt *bitmask;
+        const APInt *bitmask2;
+      };
+
+      auto matchFieldAdd = [&](Value *Op) -> std::optional<BitFieldAddInfo> {
+        const APInt *bitmaskAnd, *bitmaskAdd = nullptr;
+        Value *X, *Y;
+
+        auto bitFieldAdd = m_CombineOr(
+            m_CombineOr(
+                m_And(m_Add(m_Value(X), m_Value(Y)), m_APInt(bitmaskAnd)),
+                m_Add(m_And(m_Value(X), m_APInt(bitmaskAnd)), m_Value(Y))),
+            m_And(m_Add(m_And(m_Value(X), m_APInt(bitmaskAnd)), m_Value(Y)),
+                  m_APInt(bitmaskAdd)));
+
+        auto optBitFieldAdd =
+            m_c_Xor(m_And(m_Value(X), m_APInt(bitmaskAdd)),
+                    m_Add(m_And(m_Value(X), m_APInt(bitmaskAnd)), m_Value(Y)));
+
+        LLVM_DEBUGM("Match Trying  : "; Op->dump());
+        if (match(Op, bitFieldAdd)) {
+          LLVM_DEBUGM("bitmaskAnd : " << *bitmaskAnd);
+          if (bitmaskAdd != nullptr && bitmaskAdd != bitmaskAnd) {
+            LLVM_DEBUGM("bitmaskAdd : " << *bitmaskAdd);
+            return std::nullopt;
+          }
+
+          KnownBits OpKB = computeKnownBits(Op, DL, 0, &AC, &I, &DT);
+          KnownBits BitmaskKB = KnownBits::makeConstant(*bitmaskAnd);
+          LLVM_DEBUGM("OpKB == (OpKB & BitmaskKB)): "; OpKB.print(errs());
+                      BitmaskKB.print(errs()));
+
+          if (OpKB != (OpKB & BitmaskKB))
+            return std::nullopt;
+
+          return {{X, Y, bitmaskAnd, nullptr}};
+        }
+        if (match(Op, optBitFieldAdd)) {
+          LLVM_DEBUGM("bitmaskAnd : " << *bitmaskAnd << " " << *bitmaskAdd);
+          return {{X, Y, bitmaskAnd, bitmaskAdd}};
+        }
+
+        return std::nullopt;
+      };
+
+        
       if (auto *Op = dyn_cast<PossiblyDisjointInst>(&I)) {
         if (Op->isDisjoint()) {
           LLVM_DEBUGM("disjoint instruction"; I.dump(););
-
-          struct BitFieldAddInfo {
-            Value *X;
-            const APInt *added;
-            const APInt *bitmask;
-          };
-
-          auto matchFieldAdd = [&](Value *Op) -> std::optional<BitFieldAddInfo> {
-            const APInt *bitmask, *added;
-            Value *X;
-            auto m_Matcher = m_CombineOr(
-                m_And(m_Add(m_Value(X), m_APInt(added)), m_APInt(bitmask)),
-                m_Add(m_And(m_Value(X), m_APInt(bitmask)), m_APInt(added)));
-            if (match(Op, m_Matcher)) {
-              LLVM_DEBUGM("match : " << *added << " " << *bitmask;);
-              KnownBits OpKB = computeKnownBits(Op, DL, 0, &AC, &I, &DT);
-              KnownBits BitmaskKB = KnownBits::makeConstant(*bitmask);
-              if (added->isSubsetOf(*bitmask)) {
-                LLVM_DEBUGM("added->isSubsetOf(*bitmask) : ";);
-                if (OpKB == (OpKB & BitmaskKB)) {
-                  LLVM_DEBUGM("OpKB == (OpKB & BitmaskKB)): ";
-                              OpKB.print(errs()););
-                  return {{X, added, bitmask}};
-                }
-              }
-            }
-            return std::nullopt;
-          };
 
           auto LHS = matchFieldAdd(Op0);
           auto RHS = matchFieldAdd(Op1);
 
           if (!LHS || !RHS)
-            return -1;
+            continue;
 
           LLVM_DEBUGM("bitfieldadd true");
           IRBuilder builder(&I);
+          if (LHS->bitmask2 || RHS->bitmask2) {
+            LLVM_DEBUGM("opt pass");
+            if (RHS->bitmask2)
+              std::swap(LHS, RHS);
 
-          // countr_zero(LHS.bitmask)
-          // and = X & (clearbit(countr_zero(LHS.bitmask) | clearbit(countr_zero(RHS.bitmask))
-          // add = and + (LHS.added | RHS.added)
-          // and2 = and ( setbit(clearAllBits(LHS.bitmask), )
-          Value *X = LHS->X;
-          unsigned LHS_Highest = LHS->bitmask->countl_zero();
-          unsigned RHS_Highest = RHS->bitmask->countl_zero();
-          unsigned bitWidth = LHS->bitmask->getBitWidth();
-          LLVM_DEBUGM("LHS RHS Highest : " << LHS_Highest << " " << RHS_Highest);
+            Value *X = LHS->X;
+            Value *Y = LHS->Y;
+            unsigned Highest = RHS->bitmask->countl_zero();
+            unsigned bitWidth = RHS->bitmask->getBitWidth();
+            // top bit excluded
+            APInt bitmask = *RHS->bitmask;
+            bitmask.clearBit(bitWidth -1 - Highest);
+            // top bit only 
+            APInt bitmask2(bitWidth, 0);
+            bitmask2.setBit(bitWidth -1 - Highest);
 
-          APInt andMask = *LHS->bitmask | *RHS->bitmask;
-          LLVM_DEBUGM("andmask : " << andMask << " " << bitWidth);
-          andMask.clearBit(bitWidth-1 - LHS_Highest);
-          andMask.clearBit(bitWidth-1 - RHS_Highest);
-          LLVM_DEBUGM("andmask : " << andMask);
-          
-          APInt added = *LHS->added | *RHS->added;
-          LLVM_DEBUGM("added : " << added);
+            APInt bitmaskBeforeAdd = *LHS->bitmask | bitmask;
+            APInt bitmaskAfterAdd = *LHS->bitmask2 | bitmask2;
 
-          APInt andMask2(bitWidth, 0);
-          andMask2.setBit(bitWidth-1 - LHS_Highest);
-          andMask2.setBit(bitWidth-1 - RHS_Highest);
-          LLVM_DEBUGM("andMask2: " << andMask2);
+            LLVM_DEBUGM("0 : " << bitmask << " 1: " << bitmask2);
+            LLVM_DEBUGM("0 : " << bitmaskBeforeAdd << " 1: " << bitmaskAfterAdd);
 
-          auto and1 = builder.CreateAnd(X, andMask, "and");
-          auto add = builder.CreateAdd(and1, ConstantInt::get(and1->getType(), added), "add", true);
-          auto and2 = builder.CreateAnd(X, andMask2, "and2");
-          auto xor1 = builder.CreateXor(add, and2);
-          auto ret = builder.CreateRet(xor1);
+            auto and1 = builder.CreateAnd(X, bitmaskBeforeAdd, "and");
+            auto add = builder.CreateAdd(and1, Y, "add", true);
+            auto and2 = builder.CreateAnd(X, bitmaskAfterAdd, "and2");
+            auto xor1 = builder.CreateXor(add, and2);
 
+          } else {
+            Value *X = LHS->X;
+            Value *Y = LHS->Y;
+            unsigned LHS_Highest = LHS->bitmask->countl_zero();
+            unsigned RHS_Highest = RHS->bitmask->countl_zero();
+            unsigned bitWidth = LHS->bitmask->getBitWidth();
+            LLVM_DEBUGM("LHS RHS Highest : " << LHS_Highest << " "
+                                             << RHS_Highest);
+
+            APInt andMask = *LHS->bitmask | *RHS->bitmask;
+            LLVM_DEBUGM("andmask : " << andMask << " " << bitWidth);
+            andMask.clearBit(bitWidth - 1 - LHS_Highest);
+            andMask.clearBit(bitWidth - 1 - RHS_Highest);
+            LLVM_DEBUGM("andmask : " << andMask);
+
+            APInt andMask2(bitWidth, 0);
+            andMask2.setBit(bitWidth - 1 - LHS_Highest);
+            andMask2.setBit(bitWidth - 1 - RHS_Highest);
+            LLVM_DEBUGM("andMask2: " << andMask2);
+
+            auto and1 = builder.CreateAnd(X, andMask, "and");
+            auto add = builder.CreateAdd(and1, Y, "add", true);
+            auto and2 = builder.CreateAnd(X, andMask2, "and2");
+            auto xor1 = builder.CreateXor(add, and2);
+
+            I.replaceAllUsesWith(xor1);
+          }
+          F->dump();
         }
       }
     }
-
-    F->dump();
   }
 }
