@@ -75,13 +75,23 @@ static std::unique_ptr<Module> makeLLVMModule(LLVMContext &context,
   return parseAssemblyString(modulestr, err, context);
 }
 
+struct BitFieldAddBitMask {
+  const APInt *Lower;
+  const APInt *Upper;
+};
+struct BitFieldOptBitMask {
+  const APInt *Lower;
+  const APInt *Upper;
+  const APInt *New;
+};
 struct BitFieldAddInfo {
   Value *X;
   Value *Y;
-  const APInt *bitmask;
-  const APInt *bitmask2;
-  const APInt *bitmask3;
   bool opt;
+  union {
+    BitFieldAddBitMask AddMask;
+    BitFieldOptBitMask OptMask;
+  };
 };
 
 //static Value *foldBitfieldArithmetic(BinaryOperator &I, InstCombinerImpl &IC,
@@ -97,8 +107,8 @@ static Value *foldBitfieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
 
   auto matchBitFieldArithmetic =
       [&](Value *Op0, Value *Op1) -> std::optional<BitFieldAddInfo> {
-    const APInt *maskLower, *maskUpper, *maskUpper2 = nullptr, *maskOpt1,
-                                      *maskOpt2;
+    const APInt *maskOpt1, *maskOpt2, *maskLower, *maskUpper,
+        *maskUpper2 = nullptr;
     Value *X, *Y;
     unsigned Highest, BitWidth;
 
@@ -125,20 +135,22 @@ static Value *foldBitfieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       // 1. 1st 2nd bitmask 는 같은 비트가 있어서는 안된다.
       // 2. 1st 2nd bitmask 의 비트는 연쇄적이어야 한다. 
       // 3. 각 bitmask는 2자리 이상이어야 한다.
+      // TODO : X는 maskLower 비트 범위 내에, Y는 maskUpper 비트 범위 내에만 존재하는 값이여야 한다. 
+
       LLVM_DEBUGM("popcount : " << maskLower->popcount() << " " << maskUpper->popcount());
       LLVM_DEBUGM("sm : " << maskLower->isShiftedMask() << " " << maskUpper->isShiftedMask());
       LLVM_DEBUGM("bm : " ;KnownBits::makeConstant(Mask).print(errs()));
       LLVM_DEBUGM("bm : " ;KnownBits::makeConstant(*maskLower).print(errs()));
       LLVM_DEBUGM("bm : " ;KnownBits::makeConstant(*maskUpper).print(errs()));
       LLVM_DEBUGM("bm : " ;KnownBits::makeConstant(Mask ^ *maskLower ^ *maskUpper).print(errs()));
-      if (!((maskUpper2 != nullptr && *maskUpper == *maskUpper2) &&
+      if (!((maskUpper2 == nullptr || *maskUpper == *maskUpper2) &&
             (maskLower->popcount() >= 2 && maskUpper->popcount() >= 2) &&
             (maskLower->isShiftedMask() && maskUpper->isShiftedMask()) &&
             ((*maskLower & *maskUpper) == 0) &&
             ((Mask ^ *maskLower ^ *maskUpper).isAllOnes())))
         return std::nullopt;
 
-      return {{X, Y, maskLower, maskUpper, nullptr, false}};
+      return {{X, Y, false, {{maskLower, maskUpper}}}};
     }
 
     if ((match(Op0, optBitFieldAdd) && match(Op1, bitFieldAddUpper)) ||
@@ -194,7 +206,9 @@ static Value *foldBitfieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
             (Mask2 ^ *maskUpper ^ (*maskOpt1 ^ *maskOpt2)).isAllOnes()))
         return std::nullopt;
 
-      return {{X, Y, maskUpper, maskOpt1, maskOpt2, true}};
+      struct BitFieldAddInfo info = {X, Y, true, {{maskOpt1, maskOpt2}}};
+      info.OptMask.New = maskUpper;
+      return {info};
     }
 
     return std::nullopt;
@@ -205,34 +219,34 @@ static Value *foldBitfieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
   if (info) {
     Value *X = info->X;
     Value *Y = info->Y;
-    APInt bitmaskLower, bitmaskUpper;
-    unsigned mask_Highest = info->bitmask->countl_zero();
-    unsigned bitWidth = info->bitmask->getBitWidth();
-    APInt bitmask2(bitWidth, 0);
+    APInt BitMaskLower, BitMaskUpper;
+    unsigned BitWidth = info->AddMask.Lower->getBitWidth();
 
     if (info->opt) {
-      // top bit excluded
-      APInt bitmask = *info->bitmask;
-      bitmask.clearBit(bitWidth - 1 - mask_Highest);
-      bitmask2.setBit(bitWidth - 1 - mask_Highest);
-      bitmaskLower = *info->bitmask2 | bitmask;
-      bitmaskUpper = *info->bitmask3 | bitmask2;
+      unsigned NewHiBit = info->OptMask.New->countl_zero() + 1;
+      BitMaskLower = *info->OptMask.Lower | *info->OptMask.New;
+      BitMaskLower.clearBit(NewHiBit);
+      BitMaskUpper = *info->OptMask.Upper;
+      BitMaskUpper.setBit(NewHiBit);
     } else {
-      unsigned mask2_Highest;
-      mask2_Highest = info->bitmask2->countl_zero();
-      bitmaskLower = *info->bitmask | *info->bitmask2;
-      bitmaskLower.clearBit(bitWidth - 1 - mask_Highest);
-      bitmaskLower.clearBit(bitWidth - 1 - mask2_Highest);
-      bitmask2.setBit(bitWidth - 1 - mask_Highest);
-      bitmask2.setBit(bitWidth - 1 - mask2_Highest);
-      bitmaskUpper = bitmask2;
-    }
-    auto and1 = Builder.CreateAnd(X, bitmaskLower, "and");
-    auto add = Builder.CreateAdd(and1, Y, "add", true);
-    auto and2 = Builder.CreateAnd(X, bitmaskUpper, "and2");
-    auto xor1 = Builder.CreateXor(add, and2);
+      unsigned LowerHiBit =
+          BitWidth - (info->AddMask.Lower->countl_zero() + 1);
+      unsigned UpperHiBit =
+          BitWidth - (info->AddMask.Upper->countl_zero() + 1);
 
-    return xor1;
+      BitMaskLower = *info->AddMask.Lower | *info->AddMask.Upper;
+      BitMaskLower.clearBit(LowerHiBit);
+      BitMaskLower.clearBit(UpperHiBit);
+      BitMaskUpper = APInt::getOneBitSet(BitWidth, LowerHiBit);
+      BitMaskUpper.setBit(UpperHiBit);
+    }
+
+    auto AndLower = Builder.CreateAnd(X, BitMaskLower);
+    auto Add = Builder.CreateNUWAdd(AndLower, Y);
+    auto AndUpper = Builder.CreateAnd(X, BitMaskUpper);
+    auto Xor = Builder.CreateXor(Add, AndUpper);
+
+    return Xor;
   }
 
   return nullptr;
