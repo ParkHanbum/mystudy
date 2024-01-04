@@ -1,13 +1,3 @@
-define i32 @src(i32 %x.coerce) {
-entry:
-  %inc = add i32 %x.coerce, 1
-  %bf.value = and i32 %inc, 127
-  %0 = and i32 %x.coerce, -128
-  %bf.shl = add i32 %0, 128
-  %bf.set8 = or disjoint i32 %bf.value, %bf.shl
-  ret i32 %bf.set8
-}
-
 define i32 @bitsize_mismatch_1(i32 %x.coerce) {
 entry:
   %inc = add i32 %x.coerce, 1
@@ -18,16 +8,17 @@ entry:
   ret i32 %bf.set8
 }
 
-; 00001011 ; 11 
-; 00010100 ; 20
-; 01101011 ; 107
-; 10010100 ; 108
+define i32 @src_2_bitfield_const(i32 %x.coerce) {
+entry:
+  %inc = add i32 %x.coerce, 1
+  %bf.value = and i32 %inc, 127
+  %0 = and i32 %x.coerce, -128
+  %bf.shl = add i32 %0, 128
+  %bf.set8 = or disjoint i32 %bf.value, %bf.shl
+  ret i32 %bf.set8
+}
 
-;  %and = and i8 %y.coerce, 11
-;  %add = add nuw i8 %and, %x.coerce
-;  %and2 = and i8 %y.coerce, 20
-;  %0 = xor i8 %add, %and2
-define i8 @src3(i8 %x.coerce, i8 %y.coerce) {
+define i8 @src_3_bitfield_op(i8 %x.coerce, i8 %y.coerce) {
 entry:
   %narrow = add i8 %y.coerce, %x.coerce
   %bf.value = and i8 %narrow, 7
@@ -56,6 +47,18 @@ entry:
   %bf.lshr22 = and i8 %x.coerce, -32
   %bf.lshr2547 = add i8 %bf.lshr22, 32
   %bf.value30 = and i8 %bf.lshr2547, -32
+  %bf.set33 = or disjoint i8 %bf.set20, %bf.value30
+  ret i8 %bf.set33
+}
+define i8 @src_3_bitfield_const_ic(i8 %x.coerce) {
+entry:
+  %narrow = add i8 %x.coerce, 1
+  %bf.value = and i8 %narrow, 7
+  %bf.lshr1244 = add i8 %x.coerce, 8
+  %bf.shl = and i8 %bf.lshr1244, 24
+  %bf.set20 = or disjoint i8 %bf.value, %bf.shl
+  %0 = and i8 %x.coerce, -32
+  %bf.value30 = add i8 %0, 32
   %bf.set33 = or disjoint i8 %bf.set20, %bf.value30
   ret i8 %bf.set33
 }
@@ -178,5 +181,24 @@ entry:
   %bf.value30 = and i8 %bf.lshr2547, -16
   %bf.set33 = or disjoint i8 %bf.set20, %bf.value30
   ret i8 %bf.set33
+}
+
+define i32 @src_2_bitfield_op(i32 %x.coerce, i32 %y.coerce) {
+; CHECK-LABEL: @src_2_bitfield_op(
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:    [[INC:%.*]] = add i32 [[X_COERCE:%.*]], [[Y_COERCE:%.*]]
+; CHECK-NEXT:    [[BF_VALUE:%.*]] = and i32 [[INC]], 127
+; CHECK-NEXT:    [[TMP0:%.*]] = and i32 [[X_COERCE]], [[Y_COERCE]]
+; CHECK-NEXT:    [[BF_SHL:%.*]] = add i32 [[TMP0]], 128
+; CHECK-NEXT:    [[BF_SET8:%.*]] = or disjoint i32 [[BF_VALUE]], [[BF_SHL]]
+; CHECK-NEXT:    ret i32 [[BF_SET8]]
+;
+entry:
+  %inc = add i32 %x.coerce, %y.coerce
+  %bf.value = and i32 %inc, 127
+  %0 = and i32 %x.coerce, -128
+  %bf.shl = add i32 %0, %y.coerce
+  %bf.set8 = or disjoint i32 %bf.value, %bf.shl
+  ret i32 %bf.set8
 }
 
