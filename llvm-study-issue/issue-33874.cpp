@@ -316,11 +316,8 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       BitUpMask = *Info->OptMask.Upper;
       BitUpMask.setBit(NewHiBit);
     } else {
-      unsigned LowerHiBit =
-          BitWidth - (Info->AddMask.Lower->countl_zero() + 1);
-      unsigned UpperHiBit =
-          BitWidth - (Info->AddMask.Upper->countl_zero() + 1);
-
+      unsigned LowerHiBit = BitWidth - (Info->AddMask.Lower->countl_zero() + 1);
+      unsigned UpperHiBit = BitWidth - (Info->AddMask.Upper->countl_zero() + 1);
       BitLoMask = *Info->AddMask.Lower | *Info->AddMask.Upper;
       BitLoMask.clearBit(LowerHiBit);
       BitLoMask.clearBit(UpperHiBit);
