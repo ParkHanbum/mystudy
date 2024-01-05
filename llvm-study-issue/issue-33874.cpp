@@ -161,9 +161,39 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
         m_c_Or(m_And(m_c_Add(m_Value(X), m_Value(Y)), m_APInt(LoMask)),
                m_And(m_c_Add(m_Deferred(X), m_Value(UpY)), m_APInt(UpMask)));
 
+  // %0 = and i8 %x.coerce, 11
+  // %1 = and i8 %y.coerce, 11
+  // %2 = add nuw i8 %0, %1
+
+  // %3 = xor i8 %x.coerce, %y.coerce
+  // %4 = and i8 %3, 20
+
+  // %5 = xor i8 %2, %4
+
+  // 1. opt
+  // %0 = and i8 %x.coerce, 11
+  // %1 = add nuw i8 %0, 9
+
+  // %2 = xor i8 %x.coerce, 9
+  // %3 = and i8 %2, 20
+  
+  // %4 = xor i8 %1, %3
+
+  // 2. ic pass
+  // %0 = and i8 %x.coerce, 11
+  // %1 = add nuw nsw i8 %0, 9
+
+  // %2 = and i8 %x.coerce, 20
+  // %bf_set20 = xor i8 %1, %2
+
     auto OptBitFieldAdd = m_c_Or(
-        m_c_Xor(m_c_Add(m_c_And(m_Value(X), m_APInt(OptLoMask)), m_Value(Y)),
-                m_c_And(m_Deferred(X), m_APInt(OptUpMask))),
+        m_c_Xor(m_CombineOr(
+                    m_c_Add(m_And(m_Value(X), m_APInt(OptLoMask)),
+                            m_And(m_Value(Y), m_APInt(OptLoMask))),
+                    m_c_Add(m_And(m_Value(X), m_APInt(OptLoMask)), m_Value(Y))),
+                m_CombineOr(m_And(m_Deferred(X), m_APInt(OptUpMask)),
+                            m_And(m_c_Xor(m_Deferred(X), m_Value(UpY)),
+                                  m_APInt(OptUpMask)))),
         BitFieldAddUpper);
 
     // LHS=========================
@@ -298,9 +328,11 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       BitUpMask.setBit(UpperHiBit);
     }
 
-    auto AndLower = Builder.CreateAnd(X, BitLoMask);
-    auto Add = Builder.CreateNUWAdd(AndLower, Y);
-    auto AndUpper = Builder.CreateAnd(X, BitUpMask);
+    auto AndXLower = Builder.CreateAnd(X, BitLoMask);
+    auto AndYLower = Builder.CreateAnd(Y, BitLoMask);
+    auto Add = Builder.CreateNUWAdd(AndXLower, AndYLower);
+    auto Xor1 = Builder.CreateXor(X, Y);
+    auto AndUpper = Builder.CreateAnd(Xor1, BitUpMask);
     auto Xor = Builder.CreateXor(Add, AndUpper);
 
     return Xor;

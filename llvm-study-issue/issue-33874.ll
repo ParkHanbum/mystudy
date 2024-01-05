@@ -8,14 +8,14 @@ entry:
   ret i32 %bf.set8
 }
 
-define i32 @src_2_bitfield_const(i32 %x.coerce) {
+define i8 @src_2_bitfield_const(i8 %x.coerce) {
 entry:
-  %inc = add i32 %x.coerce, 1
-  %bf.value = and i32 %inc, 127
-  %0 = and i32 %x.coerce, -128
-  %bf.shl = add i32 %0, 128
-  %bf.set8 = or disjoint i32 %bf.value, %bf.shl
-  ret i32 %bf.set8
+  %inc = add i8 %x.coerce, 1
+  %bf.value = and i8 %inc, 63
+  %0 = and i8 %x.coerce, -64
+  %bf.shl = add i8 %0, 64
+  %bf.set8 = or disjoint i8 %bf.value, %bf.shl
+  ret i8 %bf.set8
 }
 
 define i8 @src_3_bitfield_op(i8 %x.coerce, i8 %y.coerce) {
@@ -61,6 +61,18 @@ entry:
   %bf.value30 = add i8 %0, 32
   %bf.set33 = or disjoint i8 %bf.set20, %bf.value30
   ret i8 %bf.set33
+}
+
+define i8 @src_3_bitfield_const_ic_1opt(i8 %x.coerce) {
+entry:
+  %0 = and i8 %x.coerce, 11
+  %1 = add nuw nsw i8 %0, 9
+  %2 = and i8 %x.coerce, 20
+  %bf_set20 = xor i8 %1, %2
+  %3 = and i8 %x.coerce, -32
+  %bf_set30 = add i8 %3, 32
+  %bf_set33 = or disjoint i8 %bf_set20, %bf_set30
+  ret i8 %bf_set33
 }
 
 define i8 @src_3_bitfield_const_mix(i8 %x.coerce, i8 %y.coerce) {
