@@ -145,8 +145,6 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
     const APInt *OptLoMask, *OptUpMask, *LoMask, *UpMask, *UpMask2 = nullptr;
     Value *X, *Y, *UpY;
 
-    unsigned Highest;
-
     // Lo = and(add(X, Y), LoMask)
     // Up = add(and(X, UpMask), Y) || and(add(and(X, UpMask), Y), UpMask2)
     auto BitFieldAddUpper = m_CombineOr(
@@ -213,9 +211,8 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       
       // 00000111 ; 1st 
       // 00011000 ; 2nd
-      APInt Mask(BitWidth, 0); 
-      Highest = UpMask->countl_zero(); 
-      Mask.setBits(BitWidth - Highest, BitWidth);
+      APInt Mask = APInt::getBitsSet(BitWidth, BitWidth - UpMask->countl_zero(),
+                                     BitWidth);
       // 1. 1st 2nd bitmask 는 같은 비트가 있어서는 안된다.
       // 2. 1st 2nd bitmask 의 비트는 연쇄적이어야 한다. 
       // 3. 각 bitmask는 2자리 이상이어야 한다.
@@ -251,15 +248,14 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       // 1. opt1 를 l 부터 (최상위 1) +1 까지 비트가 1인지 체크
       // 2. 1에서 0을 만날때 같은 위치에 opt2의 비트가 1인지 체크
       // -> 1에 not하고 2의 1이 나올때까지 비트를 제거하고 같은지 비교.
-      APInt Mask(BitWidth, 0), Mask2(BitWidth, 0);
       LLVM_DEBUGM("test : " << OptLoMask->countl_zero());
       LLVM_DEBUGM("Opt1 : "; KnownBits::makeConstant(*OptLoMask).print(errs()));
       LLVM_DEBUGM("Opt2 : "; KnownBits::makeConstant(*OptUpMask).print(errs()));
       LLVM_DEBUGM("Send : "; KnownBits::makeConstant(*UpMask).print(errs()));
 
-      Highest = OptUpMask->countl_zero(); 
-      Mask.setBits(BitWidth - Highest, BitWidth);
-      LLVM_DEBUGM("Highest : " << Highest << " ";KnownBits::makeConstant(Mask).print(errs()));
+      APInt Mask = APInt::getBitsSet(
+          BitWidth, BitWidth - OptUpMask->countl_zero(), BitWidth);
+      LLVM_DEBUGM("Highest : ";KnownBits::makeConstant(Mask).print(errs()));
 
       APInt NotOpt1 = ~*OptLoMask;
       LLVM_DEBUGM("test : " ;KnownBits::makeConstant(NotOpt1).print(errs()));
@@ -272,9 +268,8 @@ static Value *foldBitFieldArithmetic(BinaryOperator &I, const SimplifyQuery &Q,
       LLVM_DEBUGM("isMask3 : " << OptUpMask->isShiftedMask() << " "
                                << OptUpMask->isMask());
 
-      Highest = UpMask->countl_zero(); 
-      LLVM_DEBUGM("Highest : " << Highest);
-      Mask2.setBits(BitWidth - Highest, BitWidth);
+      APInt Mask2 = APInt::getBitsSet(
+          BitWidth, BitWidth - UpMask->countl_zero(), BitWidth);
       LLVM_DEBUGM(" bit : " ; KnownBits::makeConstant(Mask2).print(errs()));
 
       // 1. UpMask 는 2개 이상의 비트가 연속되어 세팅되야 한다. 
